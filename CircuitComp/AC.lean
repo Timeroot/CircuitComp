@@ -18,8 +18,16 @@ def AC₀ : Set (FuncFamily (Fin 2)) :=
 
 /-- The class NC₀ is contained in AC₀. -/
 theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
-  --Monotonicity of gate set: all gates in NC₀ are in AC₀.
-  sorry
+  apply CircuitClass.Monotone_gates
+  intro g
+  rw [NC₀_GateOps, AC₀_GateOps]
+  simp only [Set.mem_insert_iff, Set.mem_singleton_iff, Set.iUnion_singleton_eq_range,
+    Set.singleton_union, Set.mem_range]
+  rintro (rfl|rfl)
+  · simp
+  · right
+    use 2
+    simp_rw [Fin.prod_univ_two]
 
 /-- The AND problem is contained in AC₀, because we can take a single AND gate. -/
 theorem AND_mem_AC₀ : and_family ∈ AC₀ := by
