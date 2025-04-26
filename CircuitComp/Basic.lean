@@ -1,7 +1,7 @@
-import Mathlib.Analysis.Asymptotics.Defs
 import Mathlib.Computability.MyhillNerode
 import Mathlib.Data.Set.Card
-import Mathlib.Analysis.Normed.Ring.Lemmas
+
+import CircuitComp.GrowthRate
 
 universe u v
 
@@ -75,7 +75,17 @@ def finite : Prop :=
 def onlyUsesGates (S : Set (GateOp α)) : Prop :=
   ∀ d n, (F.gates d n).op ∈ S
 
+variable {F} {S T : Set (GateOp α)}
+
+theorem onlyUsesGates_mono (hS : S ⊆ T) (hF : F.onlyUsesGates S) :
+    F.onlyUsesGates T := by
+  intro d n
+  specialize hF d n
+  exact hS hF
+
 end FeedForward
+
+open FeedForward
 
 /-- A `CircuitFamily` is a collection of `FeedForward` circuits parameterized by an input size `n`.
 The `n`th circuit must have input type `Fin n`, and a `Unit` output. -/
@@ -94,26 +104,56 @@ def computes (F : FuncFamily α) : Prop :=
   ∀ n, (CF n).eval₁ = F n
 
 /-- Predicate expressing that the depth grows as O(f n). -/
-def depthBigO (f : ℕ → ℕ) : Prop :=
-  (fun n ↦ ((CF n).depth : ℤ)) =O[.atTop] (f · : ℕ → ℤ)
+def hasDepth (f : GrowthRate) : Prop :=
+  (fun n ↦ (CF n).depth) ∈ f
 
 /-- Predicate expressing that all circuits in the family are finite. -/
 def finite : Prop :=
   ∀ n, (CF n).finite
 
 /-- Predicate expressing that the size grows as O(f n). -/
-def sizeBigO (f : ℕ → ℕ) : Prop :=
-  CF.finite ∧
-  (fun n ↦ ((CF n).size : ℤ)) =O[.atTop] (f · : ℕ → ℤ)
-
-/-- Predicate expressing that the size grows polynomially. -/
-def sizePoly : Prop :=
-  CF.finite ∧
-  ∃ C,
-  (fun n ↦ ((CF n).size : ℤ)) =O[.atTop] (· ^ C : ℕ → ℤ)
+def hasSize (f : GrowthRate) : Prop :=
+  CF.finite ∧ (fun n ↦ (CF n).size) ∈ f
 
 /-- A `CircuitFamily` is said to `onlyUsesGates` from a set of `GateOp`s if every gate is one of those. -/
-def onlyUsesGates (S : Set (FeedForward.GateOp α)) : Prop :=
+def onlyUsesGates (S : Set (GateOp α)) : Prop :=
   ∀ n, (CF n).onlyUsesGates S
 
+variable {CF} {S T : Set (GateOp α)}
+
+theorem onlyUsesGates_mono (hS : S ⊆ T) (hCF : CF.onlyUsesGates S) :
+  CF.onlyUsesGates T := by
+  intro n
+  exact FeedForward.onlyUsesGates_mono hS (hCF n)
+
 end CircuitFamily
+
+open CircuitFamily
+
+/-- A `CircuitClass` is a set of function families defined by circuits on a given set of gates,
+a bound on depth, and a bound on size. -/
+def CircuitClass {α : Type*} (size : GrowthRate) (depth : GrowthRate) (gates : Set (GateOp α))
+    : Set (FuncFamily α) :=
+  fun fs ↦ ∃ (CF : CircuitFamily α),
+    CF.computes fs
+    ∧ CF.hasSize size
+    ∧ CF.hasDepth depth
+    ∧ CF.onlyUsesGates gates
+
+namespace CircuitClass
+
+variable {α : Type*} (size : GrowthRate) (depth : GrowthRate) (gates : Set (GateOp α))
+
+theorem Monotone_size : Monotone fun s ↦ CircuitClass s depth gates := by
+  rintro s₁ s₂ hs fs ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄⟩
+  exact ⟨CF, hCF₁, ⟨hCF₂.1, hs hCF₂.2⟩, hCF₃, hCF₄⟩
+
+theorem Monotone_depth : Monotone fun d ↦ CircuitClass size d gates := by
+  rintro d₁ d₂ hd fs ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄⟩
+  exact ⟨CF, hCF₁, hCF₂, hd hCF₃, hCF₄⟩
+
+theorem Monotone_gates : Monotone fun (g : Set (GateOp α)) ↦ CircuitClass size depth g := by
+  rintro g₁ g₂ hg fs ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄⟩
+  exact ⟨CF, hCF₁, hCF₂, hCF₃, onlyUsesGates_mono hg hCF₄⟩
+
+end CircuitClass

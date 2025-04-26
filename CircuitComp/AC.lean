@@ -1,5 +1,5 @@
 import CircuitComp.Basic
-import CircuitComp.NC0
+import CircuitComp.NC
 
 import Mathlib.Algebra.MvPolynomial.Eval
 import Mathlib.Algebra.MvPolynomial.Degrees
@@ -14,11 +14,7 @@ def AC₀_GateOps : Set (GateOp (Fin 2)) :=
 
 /-- AC₀, the constant-depth polynomial-size circuits of NOT gates and arbitrary-arity AND gates. -/
 def AC₀ : Set (FuncFamily (Fin 2)) :=
-  fun fs ↦ ∃ (CF : CircuitFamily (Fin 2)),
-    CF.computes fs
-    ∧ CF.sizePoly
-    ∧ CF.depthBigO 1
-    ∧ CF.onlyUsesGates AC₀_GateOps
+  CircuitClass .poly .const AC₀_GateOps
 
 /-- The class NC₀ is contained in AC₀. -/
 theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
@@ -42,9 +38,8 @@ def parity_family : FuncFamily (Fin 2) :=
 
 /-- Functions in AC₀ are well approximated by a low-degree polynomial in 𝔽₃. -/
 theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Fin 3)),
-    ( ∃ i, --The degree is polylog(n)
-      (MvPolynomial.totalDegree <| P · : ℕ → ℤ) =O[.atTop] (fun n ↦ n.log2 ^ i : ℕ → ℤ)
-    )
+    --The degree is polylog(n)
+    (MvPolynomial.totalDegree <| P · : ℕ → ℕ) ∈ GrowthRate.polylog
     ∧
     ( ∀ n, --The polynomial agrees on at least 2/3rd of inputs
       { x | (F n x).val = (P n).eval (fun i ↦ ⟨x i, Nat.lt_succ_of_lt (x i).2⟩)
@@ -59,9 +54,8 @@ theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial 
 
 /-- The parity function is not well approximated by low-degree polynomials in 𝔽₃. -/
 theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Fin 3)),
-    ( ∃ i, --The degree is polylog(n)
-      (MvPolynomial.totalDegree <| P · : ℕ → ℤ) =O[.atTop] (fun n ↦ n.log2 ^ i : ℕ → ℤ)
-    )
+    --The degree is polylog(n)
+    (MvPolynomial.totalDegree <| P · : ℕ → ℕ) ∈ GrowthRate.polylog
     ∧
     ( ∀ n, --The polynomial agrees on at least 2/3rd of inputs
       { x | (parity_family n x).val = (P n).eval (fun i ↦ ⟨x i, Nat.lt_succ_of_lt (x i).2⟩)
