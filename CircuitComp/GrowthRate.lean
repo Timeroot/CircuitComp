@@ -45,7 +45,7 @@ abbrev GrowthRate := Set (ℕ → ℕ)
 namespace GrowthRate
 
 def bigO (g : ℕ → ℕ) : GrowthRate :=
-  fun f ↦ (f · : ℕ → ℤ) =O[.atTop] (g · : ℕ → ℤ)
+  setOf <| fun f ↦ (f · : ℕ → ℤ) =O[.atTop] (g · : ℕ → ℤ)
 
 section defs
 --Defining the rate classes, sorted in order of going faster
@@ -55,7 +55,7 @@ abbrev const := bigO 1
 abbrev log := bigO Nat.log2
 
 def polylog : GrowthRate :=
-  fun f ↦ ∃ C,
+ setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(Nat.log2 n ^ C) : ℕ → ℤ)
 
 abbrev sqrt := bigO Nat.sqrt
@@ -65,15 +65,15 @@ abbrev linear := bigO id
 abbrev linarithmic := bigO (fun n ↦ n * Nat.log2 n)
 
 def quasilinear : GrowthRate :=
-  fun f ↦ ∃ C,
+  setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(n * Nat.log2 n ^ C) : ℕ → ℤ)
 
 def poly : GrowthRate :=
-  fun f ↦ ∃ C,
+  setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (· ^ C : ℕ → ℤ)
 
 def quasipoly : GrowthRate :=
-  fun f ↦ ∃ C,
+  setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ 2 ^ (Nat.log2 n ^ C) : ℕ → ℤ)
 
 abbrev two_pow : GrowthRate := bigO (2 ^ ·)
@@ -81,15 +81,15 @@ abbrev two_pow : GrowthRate := bigO (2 ^ ·)
 def e_pow : GrowthRate := bigO (⌈Real.exp ·⌉₊)
 
 def exp : GrowthRate :=
-  fun f ↦ ∃ (C : ℕ),
+  setOf <| fun f ↦ ∃ (C : ℕ),
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ C ^ n : ℕ → ℤ)
 
 def computable : GrowthRate :=
-  --We can't just define this as `fun f ↦ Computable f`, because this would exclude for instance
+  --We can't just define this as `fun f ↦ Nat.Primrec f`, because this would exclude for instance
   --the function `fun n ↦ if HaltingProblem n then 0 else 1`, even though that's O(1). We need to
   --say that this is bigO of some other computable function which gives an upper bound.
-  fun f ↦ ∃ g,
-    Computable g ∧ f ∈ bigO g
+  setOf <| fun f ↦ ∃ g,
+    Nat.Primrec g ∧ f ∈ bigO g
 
 end defs
 

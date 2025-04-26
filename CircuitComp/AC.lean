@@ -23,7 +23,34 @@ theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
 
 /-- The AND problem is contained in AC₀, because we can take a single AND gate. -/
 theorem AND_mem_AC₀ : and_family ∈ AC₀ := by
-  sorry
+  use (fun n ↦ ⟨
+    1,
+    ![Fin n, Unit],
+    fun d h ↦ ⟨⟨Fin n, fun x ↦ ∏ i, x i⟩, by rw [Fin.fin_one_eq_zero d]; exact id⟩,
+    rfl,
+    rfl
+  ⟩)
+  and_intros
+  · intro
+    ext
+    rfl
+  · intro n
+    rw [FeedForward.finite]
+    simp only [Fin.isValue, Fin.castSucc_zero, Matrix.cons_val_zero, id_eq, eq_mpr_eq_cast,
+      Fin.reduceLast, Matrix.cons_val_one, Nat.reduceAdd]
+    intro i
+    fin_cases i <;> simp <;> infer_instance
+  · simp [size]
+    use 0
+    simp only [Nat.cast_one, pow_zero, Asymptotics.isBigO_const_const_iff, imp_self]
+  · simp only [hasDepth, GrowthRate.const, GrowthRate.bigO, Pi.one_apply, Nat.cast_one,
+      Set.mem_setOf_eq, Asymptotics.isBigO_const_const_iff, one_ne_zero, imp_self]
+  · simp only [CircuitFamily.onlyUsesGates, FeedForward.onlyUsesGates]
+    intro n d _
+    simp only [AC₀_GateOps, Fin.isValue, Set.iUnion_singleton_eq_range, Set.singleton_union,
+      Set.mem_insert_iff, GateOp.mk.injEq, Set.mem_range]
+    right
+    use n
 
 theorem NC₀_ssubset_AC₀ : NC₀ ⊂ AC₀ := by
   refine ssubset_of_ne_of_subset ?_ NC₀_subset_AC₀
