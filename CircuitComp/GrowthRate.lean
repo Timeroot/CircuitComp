@@ -3,6 +3,8 @@ import Mathlib.Analysis.Normed.Ring.Lemmas
 import Mathlib.Analysis.SpecialFunctions.Log.Basic
 import Mathlib.Computability.Partrec
 
+import Mathlib.Tactic.Peel
+
 /-!
 # Asymptotic Growth Rates
 
@@ -25,6 +27,7 @@ with them more cleanly.
  * `GrowthRate.const`: O(1)
  * `GrowthRate.log`: O(log n)
  * `GrowthRate.sqrt`: O(sqrt n)
+ * `GrowthRate.sublinear`: o(n)
  * `GrowthRate.linear`: O(n)
  * `GrowthRate.linearithmic`: O(n * log n)
  * `GrowthRate.two_pow`: O(2 ^ n)
@@ -54,11 +57,15 @@ abbrev const := bigO 1
 
 abbrev log := bigO Nat.log2
 
-def polylog : GrowthRate :=
- setOf <| fun f ↦ ∃ C,
+abbrev polylog : Set (ℕ → ℕ) :=
+  show GrowthRate from
+  setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(Nat.log2 n ^ C) : ℕ → ℤ)
 
 abbrev sqrt := bigO Nat.sqrt
+
+def sublinear : GrowthRate :=
+  setOf <| fun f ↦ (f · : ℕ → ℤ) =o[.atTop] (· : ℕ → ℤ)
 
 abbrev linear := bigO id
 
@@ -143,40 +150,79 @@ end real
 section ordering
 
 theorem const_ssubset_log : const ⊂ log := by
-  sorry
+  simp only [const, log, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset,
+    Pi.one_apply, Nat.cast_one]
+  --this seems harder than it "ought" to be.
+  constructor
+  · intro f hf
+    sorry
+  · simp only [Asymptotics.isBigO_one_iff, Int.norm_natCast, not_forall, Classical.not_imp]
+    use Nat.log2
+    constructor
+    · simp only [Filter.isBoundedUnder_iff_eventually_bddAbove, Filter.eventually_atTop]
+      push_neg
+      rintro s ⟨c, hc⟩ a
+      use max a (2 ^ ⌈c + 1⌉₊)
+      constructor
+      · apply Nat.le_max_left
+      · suffices ∀ x ∈ s, x < max a (2 ^ ⌈c + 1⌉₊) by
+          sorry
+        simp [upperBounds] at hc
+        peel hc with x hx₁ hx₂
+        suffices x < 2 ^ ⌈c + 1⌉₊ by
+          exact lt_sup_of_lt_right this
+        sorry
+    · exact Asymptotics.isBigO_refl (fun x ↦ (Nat.log2 x : ℤ)) Filter.atTop
 
 theorem log_ssubset_polylog : log ⊂ polylog := by
   sorry
 
-  theorem polylog_ssubset_sqrt : polylog ⊂ sqrt := by
-    sorry
+theorem polylog_ssubset_sqrt : polylog ⊂ sqrt := by
+  sorry
 
-  theorem sqrt_ssubset_linear : sqrt ⊂ linear := by
-    sorry
+theorem sqrt_ssubset_sublinear : sqrt ⊂ sublinear := by
+  sorry
 
-  theorem linear_ssubset_linarithmic : linear ⊂ linarithmic := by
-    sorry
+theorem sublinear_ssubset_linear : sublinear ⊂ linear := by
+  simp only [sublinear, linear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset,
+    Pi.one_apply, Nat.cast_one]
+  constructor
+  · intro f hf
+    exact hf.isBigO
+  · push_neg
+    use id
+    constructor
+    · apply Asymptotics.isBigO_refl
+    · apply Asymptotics.isLittleO_irrefl'
+      apply Filter.Eventually.frequently
+      simp only [id_eq, Int.norm_natCast, ne_eq, Nat.cast_eq_zero, Filter.eventually_atTop]
+      use 1
+      intro b hb
+      exact Nat.ne_zero_of_lt hb
 
-  theorem linarithmic_ssubset_quasilinear : linarithmic ⊂ quasilinear := by
-    sorry
+theorem linear_ssubset_linarithmic : linear ⊂ linarithmic := by
+  sorry
 
-  theorem quasilinear_ssubset_poly : quasilinear ⊂ poly := by
-    sorry
+theorem linarithmic_ssubset_quasilinear : linarithmic ⊂ quasilinear := by
+  sorry
 
-  theorem poly_ssubset_quasipoly : poly ⊂ quasipoly := by
-    sorry
+theorem quasilinear_ssubset_poly : quasilinear ⊂ poly := by
+  sorry
 
-  theorem quasipoly_ssubset_two_pow : quasipoly ⊂ two_pow := by
-    sorry
+theorem poly_ssubset_quasipoly : poly ⊂ quasipoly := by
+  sorry
 
-  theorem two_pow_ssubset_e_pow : two_pow ⊂ e_pow := by
-    sorry
+theorem quasipoly_ssubset_two_pow : quasipoly ⊂ two_pow := by
+  sorry
 
-  theorem e_pow_ssubset_exp : e_pow ⊂ exp := by
-    sorry
+theorem two_pow_ssubset_e_pow : two_pow ⊂ e_pow := by
+  sorry
 
-  theorem exp_ssubset_computable : exp ⊂ computable := by
-    sorry
+theorem e_pow_ssubset_exp : e_pow ⊂ exp := by
+  sorry
+
+theorem exp_ssubset_computable : exp ⊂ computable := by
+  sorry
 
 end ordering
 

@@ -2,6 +2,7 @@ import Mathlib.Computability.MyhillNerode
 import Mathlib.Data.Set.Card
 
 import CircuitComp.GrowthRate
+import CircuitComp.FuncFamily
 
 universe u v
 
@@ -95,9 +96,6 @@ def CircuitFamily (α : Type u) :=
 namespace CircuitFamily
 
 variable {α : Type u} {inp out : Type v} (CF : CircuitFamily α)
-
-/-- A Sigma type over functions of varying arity from α to α. -/
-abbrev FuncFamily (α : Type*) := (n : ℕ) → (Fin n → α) → α
 
 /-- A `CircuitFamily` is said to `computes` a function family if that is given by its `eval₁`.-/
 def computes (F : FuncFamily α) : Prop :=
