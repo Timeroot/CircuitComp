@@ -33,12 +33,24 @@ structure FeedForward (α : Type u) (inp : Type v) (out : Type v) where
   /- The gates at each nonzero layer. -/
   gates : (d : Fin depth) → (nodes d.succ) → FeedForward.Gate α (nodes d.castSucc)
   /- Guarantee the input and output types are correct -/
-  hIn : nodes 0 = inp
-  hOut : nodes (Fin.last depth) = out
+  nodes_zero : nodes 0 = inp
+  nodes_last : nodes (Fin.last depth) = out
 
 namespace FeedForward
 
-variable {α : Type u} {inp out : Type v} (F : FeedForward α inp out)
+attribute [simp] nodes_zero
+attribute [simp] nodes_last
+
+variable {α : Type u} {inp out a b c a₂ b₂ : Type v} (F : FeedForward α inp out)
+
+/-- The identity GateOp. -/
+abbrev GateOp.id (α : Type u) : GateOp α where
+  ι := PUnit
+  func x := x .unit
+
+variable {F} in
+theorem inp_eq_out_of_depth_zero (h : F.depth = 0) : inp = out :=
+  (F.nodes_zero.symm.trans (congrArg _ <| Fin.zero_eq_last_iff.mpr h)).trans F.nodes_last
 
 def Gate.eval {domain : Type*} (g : FeedForward.Gate α domain) (xs : domain → α) : α :=
   g.op.func (xs <| g.inputs ·)
@@ -47,18 +59,106 @@ def Gate.eval {domain : Type*} (g : FeedForward.Gate α domain) (xs : domain →
 def evalNode {d : Fin (F.depth + 1)} (node : F.nodes d) (xs : inp → α) : α := by
   rcases d with ⟨d, hd⟩
   induction d
-  · exact xs (F.hIn ▸ node)
+  · exact xs (F.nodes_zero ▸ node)
   · rename_i d' ih
     apply (F.gates ⟨d', Nat.succ_lt_succ_iff.mp hd⟩ node).eval
     exact fun node' ↦ ih (Nat.lt_of_succ_lt hd) node'
 
 /-- Evaluate a `FeedForward` on some input data. Gives a value for each node at the last layer. -/
 def eval (xs : inp → α) : out → α :=
-  fun n ↦ F.evalNode (d := (Fin.last F.depth)) (F.hOut.symm.rec n) xs
+  fun n ↦ F.evalNode (d := (Fin.last F.depth)) (F.nodes_last.symm.rec n) xs
 
 /-- Evaluate a `FeedForward` on some input data, and get the unique output. -/
 def eval₁ [Unique out] (xs : inp → α) : α :=
   F.eval xs default
+
+/-- Relabel the input type of a `FeedForward` given an `Equiv`. -/
+def relabelIn (hF : F.depth ≠ 0) (e : inp ≃ a) : FeedForward α a out :=
+  have : NeZero F.depth := ⟨hF⟩
+  { depth := F.depth
+    nodes k := if k = 0 then a else F.nodes k
+    gates k n := if hk : k = 0 then
+        have g := F.gates k n
+        ⟨g.op, have gi := g.inputs; by simp [hk] at gi ⊢; exact ⇑e ∘ gi⟩
+      else cast (by simp [hk]) (F.gates k n)
+    nodes_zero := by simp
+    nodes_last := by simp [hF]
+  }
+
+--TODO pull out to Mathlib
+theorem Fin.castSucc_lt_top (n : ℕ) (x : Fin n) : x.castSucc < ⊤ :=
+  Ne.lt_top (by simp [Fin.ext_iff, x.2.ne])
+
+-- @[simp]
+
+/-- Relabel the output type of a `FeedForward` given an `Equiv`. -/
+def relabelOut (hF : F.depth ≠ 0) (e : out ≃ a) : FeedForward α inp a :=
+  have : NeZero F.depth := ⟨hF⟩
+  { depth := F.depth
+    nodes k := if k = ⊤ then a else F.nodes k
+    gates k n := if hk : k = ⊤ then
+        have g := F.gates k (by simp [Fin.top_eq_last, hk] at n ⊢; exact e.symm n)
+        ⟨g.op, have gi := g.inputs; fun i ↦ by simp [hk, Fin.top_eq_last, Fin.castSucc] at gi ⊢; exact sorry⟩
+      else cast (by simp [hk, Fin.top_eq_last, (Fin.castSucc_lt_last k).ne]) (F.gates k sorry)
+    nodes_zero := by simp [hF]
+    nodes_last := by simp [hF, Fin.top_eq_last]
+  }
+
+/-- Compose two `FeedForward`s by stacking one on top of the other. -/
+def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : FeedForward α a c where
+  depth := f.depth + g.depth
+  nodes k := if h : k.val ≤ f.depth then f.nodes ⟨k, by omega⟩ else g.nodes ⟨k - f.depth, by omega⟩
+  gates k n := if h : k.val < f.depth
+    then cast
+      (by rw [dif_pos (by exact Nat.le_of_succ_le h)]; rfl)
+      (f.gates ⟨k.val, h⟩ (cast (by rw [dif_pos (by exact h)]; simp) n))
+    else cast
+      (by
+        split_ifs with h₂
+        · congr 1
+          trans b
+          · convert g.nodes_zero
+            ext
+            simp at h₂ ⊢
+            omega
+          · convert f.nodes_last.symm using 2
+            ext
+            simp at h₂ ⊢
+            omega
+        · rfl)
+      (g.gates ⟨k.val - f.depth, by omega⟩
+        (cast (by rw [dif_neg (by simp; omega)]; congr; simp; omega) n))
+  nodes_zero := by simp
+  nodes_last := by
+    split_ifs with h
+    · replace h : g.depth = 0 := by simpa using h
+      refine Eq.trans ?_ (g.inp_eq_out_of_depth_zero h)
+      simpa [-FeedForward.nodes_last, h] using f.nodes_last
+    · simpa [-FeedForward.nodes_last] using g.nodes_last
+
+@[simp]
+theorem eval_comp (F : FeedForward α a b) (G : FeedForward α b c) : (G.comp F).eval = G.eval ∘ F.eval := by
+  sorry
+
+/-- Run two `FeedForward`s in "parallel" on separate inputs of equal depth . -/
+def sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂) (hf : f.depth = d) (hg : g.depth = d) :
+    FeedForward α (a ⊕ a₂) (b ⊕ b₂) where
+  depth := d
+  nodes k := f.nodes (k.cast (by rw [hf])) ⊕ g.nodes (k.cast (by rw [hg]))
+  gates k :=
+    Sum.elim
+      (fun n ↦
+        have := f.gates (k.cast (by rw [hf])) (cast (by simp) n)
+        ⟨this.op, .inl ∘ this.inputs⟩)
+      (fun n ↦
+        have := g.gates (k.cast (by rw [hg])) (cast (by simp) n)
+        ⟨this.op, .inr ∘ this.inputs⟩)
+  nodes_zero := by simp
+  nodes_last := by simp
+
+theorem eval_sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂) (hf : f.depth = d) (hg : g.depth = d) :
+    ∀ (x : a ⊕ a₂ → α), (f.sum g hf hg).eval x = Sum.elim (f.eval (x ∘ .inl)) (g.eval (x ∘ .inr)) := by
+  sorry
 
 /-- The cardinal width of a feedforward circuit is the largest number of nodes in any layer. -/
 noncomputable def width_card : Cardinal :=

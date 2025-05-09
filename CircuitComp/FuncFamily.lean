@@ -20,7 +20,7 @@ abbrev FuncFamily (α : Type*) := (n : ℕ) → (Fin n → α) → α
 
 namespace FuncFamily
 
-variable {α : Type*}
+variable {α β : Type*}
 
 open Classical in
 /-- A function family over booleans can be viewed as a language, where the output
@@ -46,6 +46,14 @@ noncomputable def toLanguage : FuncFamily Bool ≃ Language Bool where
     ext
     rw [Set.mem_setOf]
     simp
+
+/-- Lift an equivalence `α ≃ β` to an equivalence `FuncFamily α ≃ FuncFamily β`. -/
+@[simps]
+def onEquiv (e : α ≃ β) : FuncFamily α ≃ FuncFamily β where
+  toFun fn n x := e <| fn n <| e.symm ∘ x
+  invFun fn n x := e.symm <| fn n <| e ∘ x
+  left_inv _ := by simp [← Function.comp_assoc]
+  right_inv _ := by simp [← Function.comp_assoc]
 
 /-- The problem AND: Compute the logical AND of the input bits. -/
 def AND : FuncFamily (Fin 2) :=
