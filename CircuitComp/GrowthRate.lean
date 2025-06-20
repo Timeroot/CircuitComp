@@ -1,14 +1,16 @@
 import Mathlib.Analysis.Asymptotics.Defs
 import Mathlib.Analysis.Normed.Ring.Lemmas
 import Mathlib.Analysis.SpecialFunctions.Log.Basic
+import Mathlib.Analysis.SpecialFunctions.Pow.Real
 import Mathlib.Computability.Partrec
+import Mathlib.Data.Complex.ExponentialBounds
 
 import Mathlib.Tactic.Peel
 
 /-!
 # Asymptotic Growth Rates
 
-This file collects about popular "growth rates" that show up in complexity theory. While
+This file collects about common "growth rates" that show up in complexity theory. While
 `IsBigO` expresses growth rate up to a multiplicative constant, other important classes
 include (in rough order of literature frequency):
  * `GrowthRate.poly`: Polynomial growth, typically written $poly(n)$
@@ -51,16 +53,15 @@ def bigO (g : ℕ → ℕ) : GrowthRate :=
   setOf <| fun f ↦ (f · : ℕ → ℤ) =O[.atTop] (g · : ℕ → ℤ)
 
 section defs
---Defining the rate classes, sorted in order of going faster
+--Defining the rate classes, sorted in order of growing more quickly
 
 abbrev const := bigO 1
 
-abbrev log := bigO Nat.log2
+abbrev log := bigO (Nat.log 2)
 
-abbrev polylog : Set (ℕ → ℕ) :=
-  show GrowthRate from
+abbrev polylog : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
-    (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(Nat.log2 n ^ C) : ℕ → ℤ)
+    (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(Nat.log 2 n ^ C) : ℕ → ℤ)
 
 abbrev sqrt := bigO Nat.sqrt
 
@@ -69,11 +70,11 @@ def sublinear : GrowthRate :=
 
 abbrev linear := bigO id
 
-abbrev linarithmic := bigO (fun n ↦ n * Nat.log2 n)
+abbrev linarithmic := bigO (fun n ↦ n * Nat.log 2 n)
 
 def quasilinear : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
-    (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(n * Nat.log2 n ^ C) : ℕ → ℤ)
+    (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(n * Nat.log 2 n ^ C) : ℕ → ℤ)
 
 def poly : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
@@ -81,7 +82,7 @@ def poly : GrowthRate :=
 
 def quasipoly : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
-    (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ 2 ^ (Nat.log2 n ^ C) : ℕ → ℤ)
+    (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ 2 ^ (Nat.log 2 n ^ C) : ℕ → ℤ)
 
 abbrev two_pow : GrowthRate := bigO (2 ^ ·)
 
@@ -111,7 +112,16 @@ theorem polylog_iff_rlog {f : ℕ → ℕ} : f ∈ polylog ↔
   sorry
 
 theorem sqrt_iff_rsqrt {f : ℕ → ℕ} : f ∈ sqrt ↔ (f · : ℕ → ℝ) =O[.atTop] (Real.sqrt ·) := by
-  sorry
+  simp [Asymptotics.isBigO_iff', sqrt, abs_of_nonneg, Real.sqrt_nonneg, bigO, Set.mem_setOf_eq]
+  constructor <;> rintro ⟨w, hw, k, h⟩
+  · refine ⟨w, hw, k, fun n hn ↦ (h n hn).trans ?_⟩
+    exact mul_le_mul_of_nonneg_left (Real.le_sqrt_of_sq_le <| mod_cast Nat.sqrt_le' _) hw.le
+  · refine ⟨w * 2, by positivity, k, fun m hm ↦ (h m hm).trans ?_⟩
+    rw [mul_assoc]
+    refine mul_le_mul_of_nonneg_left ?_ hw.le
+    rw [Real.sqrt_le_left (by positivity)]
+    norm_cast
+    nlinarith only [m.lt_succ_sqrt]
 
 theorem linarithmic_iff_rlog {f : ℕ → ℕ} : f ∈ linarithmic ↔
     (f · : ℕ → ℝ) =O[.atTop] (fun x ↦ x * Real.log x) := by
@@ -122,8 +132,17 @@ theorem quasilinear_iff_rlog {f : ℕ → ℕ} : f ∈ quasilinear ↔
   sorry
 
 theorem poly_iff_rpow {f : ℕ → ℕ} : f ∈ poly ↔
-    ∃ C, (f · : ℕ → ℝ) =O[.atTop] (fun n ↦ n ^ C : ℕ → ℝ) := by
-  sorry
+    ∃ (C : ℝ), (f · : ℕ → ℝ) =O[.atTop] (fun n ↦ n ^ C : ℕ → ℝ) := by
+  simp [poly, Asymptotics.isBigO_iff]
+  constructor
+  -- Case 1
+  · exact fun ⟨C, c, a, h⟩ => ⟨C, c, a, fun b hb => by simpa using h b hb⟩;
+  -- Case 2
+  · rintro ⟨w, w_1, w_2, h⟩
+    use Nat.ceil w;
+    use Max.max w_1 1;
+    refine ⟨w_2 + 1, fun b hb => (h b (by linarith)).trans ?_⟩
+    exact mul_le_mul ( le_max_left _ _ ) ( by rw [ abs_of_nonneg ( Real.rpow_nonneg ( Nat.cast_nonneg _ ) _ ) ] ; exact by exact le_trans ( Real.rpow_le_rpow_of_exponent_le ( by norm_cast ; linarith ) ( show w ≤ ⌈w⌉₊ from Nat.le_ceil _ ) ) ( by norm_num ) ) ( by positivity ) ( by positivity )
 
 theorem quasipoly_iff_real_two_pow {f : ℕ → ℕ} : f ∈ quasipoly ↔
     ∃ C, (f · : ℕ → ℝ) =O[.atTop] (fun n ↦ 2 ^ (Nat.log2 n ^ C) : ℕ → ℝ) := by
@@ -157,7 +176,7 @@ theorem const_ssubset_log : const ⊂ log := by
   · intro f hf
     sorry
   · simp only [Asymptotics.isBigO_one_iff, Int.norm_natCast, not_forall, Classical.not_imp]
-    use Nat.log2
+    use Nat.log 2
     constructor
     · simp only [Filter.isBoundedUnder_iff_eventually_bddAbove, Filter.eventually_atTop]
       push_neg
@@ -172,10 +191,26 @@ theorem const_ssubset_log : const ⊂ log := by
         suffices x < 2 ^ ⌈c + 1⌉₊ by
           exact lt_sup_of_lt_right this
         sorry
-    · exact Asymptotics.isBigO_refl (fun x ↦ (Nat.log2 x : ℤ)) Filter.atTop
+    · exact Asymptotics.isBigO_refl (fun x ↦ (Nat.log 2 x : ℤ)) Filter.atTop
 
 theorem log_ssubset_polylog : log ⊂ polylog := by
-  sorry
+  rw [log, polylog, ssubset_iff_subset_not_subset]
+  constructor
+  · intro f h
+    use 1
+    simp_rw [pow_one]
+    convert h
+  · simp only [bigO, Set.setOf_subset_setOf, forall_exists_index, not_forall,
+      Classical.not_imp, exists_and_right]
+    use fun n ↦ (Nat.log 2 n) ^ 2, 2, Asymptotics.isBigO_refl _ _
+    norm_num [Asymptotics.isBigO_iff]
+    intro x y
+    obtain ⟨n, hn⟩ := exists_nat_gt x
+    use 2 ^ (y + n + 1)
+    constructor
+    · linarith [@Nat.lt_two_pow_self (y + n + 1)]
+    · norm_num [Nat.log_pow]
+      nlinarith
 
 theorem polylog_ssubset_sqrt : polylog ⊂ sqrt := by
   sorry
@@ -184,21 +219,15 @@ theorem sqrt_ssubset_sublinear : sqrt ⊂ sublinear := by
   sorry
 
 theorem sublinear_ssubset_linear : sublinear ⊂ linear := by
-  simp only [sublinear, linear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset,
-    Pi.one_apply, Nat.cast_one]
-  constructor
-  · intro f hf
-    exact hf.isBigO
-  · push_neg
-    use id
-    constructor
-    · apply Asymptotics.isBigO_refl
-    · apply Asymptotics.isLittleO_irrefl'
-      apply Filter.Eventually.frequently
-      simp only [id_eq, Int.norm_natCast, ne_eq, Nat.cast_eq_zero, Filter.eventually_atTop]
-      use 1
-      intro b hb
-      exact Nat.ne_zero_of_lt hb
+  simp only [sublinear, linear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset]
+  push_neg
+  use fun _ ↦ Asymptotics.IsLittleO.isBigO, id, Asymptotics.isBigO_refl _ _
+  apply Asymptotics.isLittleO_irrefl'
+  apply Filter.Eventually.frequently
+  rw [Filter.eventually_atTop]
+  use 1
+  intro b hb
+  simp [Nat.ne_zero_of_lt hb]
 
 theorem linear_ssubset_linarithmic : linear ⊂ linarithmic := by
   sorry
@@ -218,8 +247,43 @@ theorem quasipoly_ssubset_two_pow : quasipoly ⊂ two_pow := by
 theorem two_pow_ssubset_e_pow : two_pow ⊂ e_pow := by
   sorry
 
+theorem e_pow_subset_exp : e_pow ⊆ exp := by
+  refine' fun f h ↦ ⟨⌈Real.exp 1⌉₊, h.trans (Asymptotics.isBigO_iff.mpr ⟨1, _⟩)⟩
+  have h_exp_growth (x : ℕ) : Real.exp x ≤ ⌈Real.exp 1⌉₊ ^ x := by
+    simpa using pow_le_pow_left₀ (by positivity) (Nat.le_ceil (Real.exp 1)) x;
+  simp only [Int.norm_natCast, Filter.eventually_atTop]
+  use 1
+  intros
+  erw [Real.norm_of_nonneg (by positivity)]
+  exact_mod_cast le_trans (Nat.ceil_mono <| h_exp_growth _) (by norm_num)
+
 theorem e_pow_ssubset_exp : e_pow ⊂ exp := by
-  sorry
+  use e_pow_subset_exp
+  rw [Set.not_subset]
+  use (3 ^ ·), ⟨3, by simpa using Asymptotics.isBigO_refl ..⟩
+  simp only [e_pow, bigO, Set.mem_setOf_eq, Nat.cast_pow, Nat.cast_ofNat]
+  intro h
+  rw [Asymptotics.isBigO_iff'] at h
+  contrapose! h;
+  intro c _
+  have h_exp : Filter.Tendsto (fun x : ℕ => (3 ^ x : ℝ) / ⌈(Real.exp x)⌉₊) Filter.atTop Filter.atTop := by
+    have h_exp_approx : ∀ n : ℕ, (3 ^ n : ℝ) / ⌈(Real.exp n)⌉₊ ≥ (3 / Real.exp 1) ^ n / 2 := by
+      intro n
+      rw [div_pow, Real.exp_one_pow, div_div, ge_iff_le, div_le_div_iff₀ (by positivity) (by positivity)]
+      exact mul_le_mul_of_nonneg_left ((Nat.ceil_lt_add_one (by positivity)).le.trans (by linarith [Real.add_one_le_exp n])) (by positivity)
+    refine Filter.tendsto_atTop_mono h_exp_approx ?_
+    refine Filter.Tendsto.atTop_div_const (by positivity) (tendsto_pow_atTop_atTop_of_one_lt ?_)
+    rw [one_lt_div (by positivity)]
+    exact Real.exp_one_lt_d9.trans_le <| by norm_num
+  replace h_exp := h_exp.eventually_gt_atTop c
+  simp only [Filter.eventually_atTop, ge_iff_le, Int.norm_natCast, not_exists, not_forall, not_le, exists_prop] at h_exp ⊢
+  intro x
+  rcases h_exp with ⟨w, h⟩
+  refine ⟨_, Nat.le_add_left x w, ?_⟩
+  erw [Real.norm_of_nonneg (by positivity)]
+  specialize h (w + x) (by linarith)
+  rw [lt_div_iff₀ (by positivity)] at h
+  exact_mod_cast h
 
 theorem exp_ssubset_computable : exp ⊂ computable := by
   sorry
