@@ -10,6 +10,8 @@ import Mathlib.Topology.Algebra.Order.Floor
 import Mathlib.Tactic.Peel
 import Mathlib.Tactic.Bound
 
+import CircuitComp.ForMathlib
+
 /-!
 # Asymptotic Growth Rates
 
@@ -77,55 +79,73 @@ primitiveRecursive := setOf ...
 computable := setOf ...
 -/
 
-
+/-- Constant growth rates: `O(1)` -/
 abbrev const := bigO 1
 
+/-- Logarithmic growth rates: `O(log n)` -/
 abbrev log := bigO (Nat.log 2)
 
+/-- Polylogarithmic growth rates: `(log n) ^ O(1)` -/
 abbrev polylog : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(Nat.log 2 n ^ C) : ℕ → ℤ)
 
+/-- Square-root growth rates: `O(√n)` -/
 abbrev sqrt := bigO Nat.sqrt
 
+/-- Sublinear growth rates: `o(n)` -/
 def sublinear : GrowthRate :=
   setOf <| fun f ↦ (f · : ℕ → ℤ) =o[.atTop] (· : ℕ → ℤ)
 
+/-- Linear growth rates: `O(n)` -/
 abbrev linear := bigO id
 
+/-- Linarithmic growth rates: `O(n * log n)` -/
 abbrev linarithmic := bigO (fun n ↦ n * Nat.log 2 n)
 
+/-- Quasilinear growth rates: `n * (log n)^O(1)` -/
 def quasilinear : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(n * Nat.log 2 n ^ C) : ℕ → ℤ)
 
+/-- Polynomial growth rates: `n ^ O(1)` -/
 def poly : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (· ^ C : ℕ → ℤ)
 
+/-- Quasipolynomial growth rates: `2 ^ {log(n) ^ O(1)}` -/
 def quasipoly : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ 2 ^ (Nat.log 2 n ^ C) : ℕ → ℤ)
 
+/-- `O(2 ^ n)` growth rates, not to be confused with `exp` which is `2 ^ O(n)`. -/
 abbrev two_pow := bigO (2 ^ ·)
 
+/-- `O(e ^ n)` growth rates, not to be confused with `exp` which is `e ^ O(n)`. -/
 abbrev e_pow := bigO (⌈Real.exp ·⌉₊)
 
+/-- Exponential growth rates: `O(1) ^ n`, or equivalently `2 ^ O(n)`. Corresponds to the complexity class `E`. -/
 def exp : GrowthRate :=
   setOf <| fun f ↦ ∃ (C : ℕ),
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ C ^ n : ℕ → ℤ)
 
+/-- Primitive recursive growth rates.
+
+We can't just define this as the set `fun f ↦ Primrec f`, because this would exclude for
+instance the function `fun n ↦ if HaltingProblem n then 0 else 1`, even though that's O(1). We
+instead say that this is `bigO` of some other primitive recursive function which gives an upper bound.
+-/
 def primitiveRecursive : GrowthRate :=
-  --We can't just define this as `fun f ↦ Primrec f`, because this would exclude for instance
-  --the function `fun n ↦ if HaltingProblem n then 0 else 1`, even though that's O(1). We need to
-  --say that this is bigO of some other computable function which gives an upper bound.
   setOf <| fun f ↦ ∃ g,
     Nat.Primrec g ∧ f ∈ bigO g
 
+/-- Computable growth rates.
+
+We can't just define this as the set `fun f ↦ Computable f`, because this would exclude for
+instance the function `fun n ↦ if HaltingProblem n then 0 else 1`, even though that's O(1). We
+instead say that this is `bigO` of some other computable function which gives an upper bound.
+-/
 def computable : GrowthRate :=
-  --We can't just define this as `fun f ↦ Computable f`, because this would exclude for instance
-  --the function `fun n ↦ if HaltingProblem n then 0 else 1`, even though that's O(1). We need to
-  --say that this is bigO of some other computable function which gives an upper bound.
   setOf <| fun f ↦ ∃ g,
     Computable g ∧ f ∈ bigO g
 
@@ -215,6 +235,8 @@ primitiveRecursive := setOf ...
 computable := setOf ...
 -/
 
+section add
+
 theorem const_of_add (hf : f ∈ const) (hg : g ∈ const) : (f + g) ∈ const :=
   hf.add hg
 
@@ -238,7 +260,7 @@ theorem polylog_of_add (hf : f ∈ polylog) (hg : g ∈ polylog) : (f + g) ∈ p
 theorem sqrt_of_add (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f + g) ∈ sqrt :=
   hf.add hg
 
-theorem sublinear_of_add (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f + g) ∈ sqrt :=
+theorem sublinear_of_add (hf : f ∈ sublinear) (hg : g ∈ sublinear) : (f + g) ∈ sublinear :=
   hf.add hg
 
 theorem linear_of_add (hf : f ∈ linear) (hg : g ∈ linear) : (f + g) ∈ linear :=
@@ -341,6 +363,9 @@ theorem computable_of_add (hf : f ∈ computable) (hg : g ∈ computable) :
   --TODO same as above
   sorry
 
+end add
+section sub
+
 variable (g)
 
 /--
@@ -384,6 +409,103 @@ theorem exp_of_sub (hf : f ∈ exp) : (f - g) ∈ exp := by growthRate_sub
 theorem primitiveRecursive_of_sub (hf : f ∈ primitiveRecursive) : (f - g) ∈ primitiveRecursive := by growthRate_sub
 
 theorem computable_of_sub (hf : f ∈ computable) : (f - g) ∈ computable := by growthRate_sub
+
+end sub
+section mul
+
+theorem const_mul (hf : f ∈ const) (hg : g ∈ const) : (f * g) ∈ const :=
+  hf.mul hg
+
+theorem log_mul_const (hf : f ∈ log) (hg : g ∈ const) : (f * g) ∈ log := by
+  convert hf.mul hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
+
+theorem polylog_mul (hf : f ∈ polylog) (hg : g ∈ polylog) : (f * g) ∈ polylog := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a + b
+  convert ha.mul hb
+  simp [pow_add]
+
+theorem sqrt_mul_const (hf : f ∈ sqrt) (hg : g ∈ const) : (f * g) ∈ sqrt := by
+  convert hf.mul hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
+
+theorem sublinear_mul_const (hf : f ∈ sublinear) (hg : g ∈ const) : (f * g) ∈ sublinear := by
+  sorry
+
+theorem linear_mul_const (hf : f ∈ linear) (hg : g ∈ const) : (f * g) ∈ linear := by
+  convert hf.mul hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
+
+theorem linear_of_sqrt_mul_sqrt (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f * g) ∈ linear := by
+  convert hf.mul hg
+  sorry
+
+theorem linarithmic_mul_const (hf : f ∈ linarithmic) (hg : g ∈ const) : (f * g) ∈ linarithmic := by
+  convert hf.mul hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
+
+theorem linarithmic_of_linear_mul_log (hf : f ∈ linarithmic) (hg : g ∈ const) : (f * g) ∈ linarithmic := by
+  convert hf.mul hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
+
+theorem quasilinear_mul_polylog (hf : f ∈ quasilinear) (hg : g ∈ polylog) : (f * g) ∈ quasilinear := by
+  sorry
+
+theorem poly_mul (hf : f ∈ poly) (hg : g ∈ poly) : (f * g) ∈ poly := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a + b
+  convert ha.mul hb
+  simp [pow_add]
+
+theorem quasipoly_mul (hf : f ∈ quasipoly) (hg : g ∈ quasipoly) : (f * g) ∈ quasipoly := by
+  sorry
+
+theorem two_pow_mul_const (hf : f ∈ two_pow) (hg : g ∈ const) : (f * g) ∈ two_pow := by
+  convert hf.mul hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
+
+theorem e_pow_mul_const (hf : f ∈ e_pow) (hg : g ∈ const) : (f * g) ∈ e_pow := by
+  convert hf.mul hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
+
+theorem e_pow_of_two_pow_mul_quasipoly (hf : f ∈ two_pow) (hg : g ∈ quasipoly) : (f * g) ∈ e_pow := by
+  sorry
+
+theorem exp_mul (hf : f ∈ exp) (hg : g ∈ exp) : (f * g) ∈ exp := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a * b
+  convert ha.mul hb
+  simp [mul_pow]
+
+theorem primitiveRecursive_mul (hf : f ∈ primitiveRecursive) (hg : g ∈ primitiveRecursive) :
+    (f * g) ∈ primitiveRecursive := by
+  obtain ⟨a, ha₁, ha₂⟩ := hf
+  obtain ⟨b, hb₁, hb₂⟩ := hg
+  use a * b
+  rw [← Primrec.nat_iff] at *
+  use Primrec.nat_mul.comp ha₁ hb₁
+  exact ha₂.mul hb₂
+
+theorem computable_mul (hf : f ∈ computable) (hg : g ∈ computable) :
+    (f * g) ∈ computable := by
+  obtain ⟨a, ha₁, ha₂⟩ := hf
+  obtain ⟨b, hb₁, hb₂⟩ := hg
+  use a * b
+  use Primrec.nat_mul.to_comp.comp ha₁ hb₁
+  exact ha₂.mul hb₂
+
+end mul
 
 end closure
 
@@ -671,26 +793,14 @@ theorem factorial_not_mem_exp : Nat.factorial ∉ exp := by
   rw [div_lt_one (by positivity)] at h
   simpa using h
 
---PULLOUT, mathlibable
-theorem Finset.range_eq_toFinset (n : ℕ) : Finset.range n = (List.range n).toFinset :=
-  Multiset.toFinset_eq _
-
---PULLOUT, mathlibable
-/-- The factorial function is primitve recursive. -/
-theorem Nat.Primrec_factorial : Nat.Primrec Nat.factorial := by
-  rw [← Primrec.nat_iff]
-  convert Primrec.list_foldl (σ := ℕ) (h := fun n ⟨p, k⟩ ↦ p * (k + 1)) .list_range (.const 1) ?_
-  · rw [← Finset.prod_range_add_one_eq_factorial, ← List.foldl_map, ← List.prod_eq_foldl]
-    rw [← List.prod_toFinset _ List.nodup_range, Finset.range_eq_toFinset]
-  · refine Primrec.comp₂ ?_ .right
-    exact Primrec.nat_mul.comp₂ .left (Primrec.succ.comp₂ .right)
-
 theorem exp_ssubset_primitiveRecursive : exp ⊂ primitiveRecursive := by
   use exp_subset_primitiveRecursive
   rw [Set.not_subset]
   use Nat.factorial
   constructor
-  · exact ⟨_, Nat.Primrec_factorial, Asymptotics.isBigO_refl ..⟩
+  · use Nat.factorial
+    rw [← Primrec.nat_iff]
+    exact ⟨Primrec.factorial, Asymptotics.isBigO_refl ..⟩
   · exact factorial_not_mem_exp
 
 theorem primitiveRecursive_subset_computable : primitiveRecursive ⊆ computable := by
@@ -707,8 +817,6 @@ theorem primitiveRecursive_ssubset_computable : primitiveRecursive ⊂ computabl
   · --have := computable₂_ack --BUMP mathlib
     sorry
   · sorry
-
-
 
 end ordering
 
