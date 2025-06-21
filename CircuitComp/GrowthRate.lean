@@ -8,6 +8,7 @@ import Mathlib.Data.Complex.ExponentialBounds
 import Mathlib.Topology.Algebra.Order.Floor
 
 import Mathlib.Tactic.Peel
+import Mathlib.Tactic.Bound
 
 /-!
 # Asymptotic Growth Rates
@@ -55,7 +56,27 @@ def bigO (g : ℕ → ℕ) : GrowthRate :=
   setOf <| fun f ↦ (f · : ℕ → ℤ) =O[.atTop] (g · : ℕ → ℤ)
 
 section defs
---Defining the rate classes, sorted in order of growing more quickly
+--Defining the rate classes, sorted in order of growing more quickly.
+--Summary:
+
+/-
+const       := bigO 1
+log         := bigO (Nat.log 2)
+polylog     := setOf ...
+sqrt        := bigO Nat.sqrt
+sublinear   := setOf ...
+linear      := bigO id
+linarithmic := bigO (fun n ↦ n * Nat.log 2 n)
+quasilinear := setOf ...
+poly        := setOf ...
+quasipoly   := setOf ...
+two_pow     := bigO (2 ^ ·)
+e_pow       := bigO (⌈Real.exp ·⌉₊)
+exp         := setOf ...
+primitiveRecursive := setOf ...
+computable := setOf ...
+-/
+
 
 abbrev const := bigO 1
 
@@ -86,9 +107,9 @@ def quasipoly : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ 2 ^ (Nat.log 2 n ^ C) : ℕ → ℤ)
 
-abbrev two_pow : GrowthRate := bigO (2 ^ ·)
+abbrev two_pow := bigO (2 ^ ·)
 
-def e_pow : GrowthRate := bigO (⌈Real.exp ·⌉₊)
+abbrev e_pow := bigO (⌈Real.exp ·⌉₊)
 
 def exp : GrowthRate :=
   setOf <| fun f ↦ ∃ (C : ℕ),
@@ -172,6 +193,200 @@ theorem exp_iff_rexp_mul {f : ℕ → ℕ} : f ∈ exp ↔
 
 end real
 
+section closure
+
+variable {f g : ℕ → ℕ}
+
+/-
+const       := bigO 1
+log         := bigO (Nat.log 2)
+polylog     := setOf ...
+sqrt        := bigO Nat.sqrt
+sublinear   := setOf ...
+linear      := bigO id
+linarithmic := bigO (fun n ↦ n * Nat.log 2 n)
+quasilinear := setOf ...
+poly        := setOf ...
+quasipoly   := setOf ...
+two_pow     := bigO (2 ^ ·)
+e_pow       := bigO (⌈Real.exp ·⌉₊)
+exp         := setOf ...
+primitiveRecursive := setOf ...
+computable := setOf ...
+-/
+
+theorem const_of_add (hf : f ∈ const) (hg : g ∈ const) : (f + g) ∈ const :=
+  hf.add hg
+
+theorem log_of_add (hf : f ∈ log) (hg : g ∈ log) : (f + g) ∈ log :=
+  hf.add hg
+
+theorem polylog_of_add (hf : f ∈ polylog) (hg : g ∈ polylog) : (f + g) ∈ polylog := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use Max.max a b
+  refine' (ha.trans _ ).add (hb.trans _ )
+  all_goals (
+    rw [Asymptotics.isBigO_iff]
+    use 1
+    norm_num
+    use 2
+    intro _ hn
+    exact_mod_cast pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
+  )
+
+theorem sqrt_of_add (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f + g) ∈ sqrt :=
+  hf.add hg
+
+theorem sublinear_of_add (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f + g) ∈ sqrt :=
+  hf.add hg
+
+theorem linear_of_add (hf : f ∈ linear) (hg : g ∈ linear) : (f + g) ∈ linear :=
+  hf.add hg
+
+theorem linarithmic_of_add (hf : f ∈ linarithmic) (hg : g ∈ linarithmic) : (f + g) ∈ linarithmic :=
+  hf.add hg
+
+theorem quasilinear_of_add (hf : f ∈ quasilinear) (hg : g ∈ quasilinear) : (f + g) ∈ quasilinear := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a ⊔ b
+  refine' ( Asymptotics.IsBigO.add ( ha.trans ( _ ) ) ( hb.trans ( _ ) ) )
+  all_goals ( --TODO: gcongr?
+    rw [Asymptotics.isBigO_iff]
+    use 1
+    norm_num
+    use 2
+    intro _ hn
+    exact_mod_cast Nat.mul_le_mul_left _ <|
+      pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
+  )
+
+theorem poly_of_add (hf : f ∈ poly) (hg : g ∈ poly) : (f + g) ∈ poly := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a ⊔ b
+  refine' (ha.trans _ ).add (hb.trans _ )
+  all_goals (
+    rw [Asymptotics.isBigO_iff]
+    use 1
+    norm_num
+    use 1
+    intro _ hn
+    exact_mod_cast pow_le_pow_right₀ hn (by bound)
+  )
+
+theorem quasipoly_of_add (hf : f ∈ quasipoly) (hg : g ∈ quasipoly) : (f + g) ∈ quasipoly := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a ⊔ b
+  refine' (ha.trans _ ).add (hb.trans _ )
+  all_goals (
+    rw [Asymptotics.isBigO_iff]
+    use 1
+    norm_num [Int.norm_eq_abs]
+    use 2
+    intro _ hn
+    exact_mod_cast pow_le_pow_right₀ one_le_two <|
+      pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
+  )
+
+theorem two_pow_of_add (hf : f ∈ two_pow) (hg : g ∈ two_pow) : (f + g) ∈ two_pow :=
+  hf.add hg
+
+theorem e_pow_of_add (hf : f ∈ e_pow) (hg : g ∈ e_pow) : (f + g) ∈ e_pow :=
+  hf.add hg
+
+theorem exp_of_add (hf : f ∈ exp) (hg : g ∈ exp) : (f + g) ∈ exp := by
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a ⊔ b
+  refine' (ha.trans _ ).add (hb.trans _ )
+  all_goals (
+    rw [Asymptotics.isBigO_iff]
+    use 1
+    norm_num [Int.norm_eq_abs]
+    use 2
+    intros
+    exact pow_le_pow_left₀ (by positivity) (by rw [abs_of_nonneg (by positivity)]; bound) _
+  )
+
+theorem primitiveRecursive_of_add (hf : f ∈ primitiveRecursive) (hg : g ∈ primitiveRecursive) :
+    (f + g) ∈ primitiveRecursive := by
+  obtain ⟨a, ha₁, ha₂⟩ := hf
+  obtain ⟨b, hb₁, hb₂⟩ := hg
+  use a + b
+  rw [← Primrec.nat_iff] at *
+  use Primrec.nat_add.comp ha₁ hb₁
+  --TODO: Should be its own lemma about bigO on natural functions
+  rw [bigO, Set.mem_setOf_eq, Asymptotics.isBigO_iff]
+  obtain ⟨x, hx₁, hx₂⟩ := ha₂.exists_pos
+  obtain ⟨y, hy₁, hy₂⟩ := hb₂.exists_pos
+  simp only [Pi.add_apply, Nat.cast_add, Filter.eventually_atTop]
+  rw [ Asymptotics.IsBigOWith ] at hx₂ hy₂
+  simp_all only [gt_iff_lt, Int.norm_natCast, Filter.eventually_atTop, ge_iff_le]
+  obtain ⟨w, h⟩ := hx₂
+  obtain ⟨w_1, h_1⟩ := hy₂
+  norm_num [ Norm.norm ] at *;
+  exact ⟨x ⊔ y, w ⊔ w_1, fun k hk => by
+    rw [ abs_of_nonneg ( by positivity : ( f k : ℝ ) + g k ≥ 0 ), abs_of_nonneg ( by positivity : ( a k + b k : ℝ ) ≥ 0 ) ]
+    nlinarith [ h k ( le_of_max_le_left hk ), h_1 k ( le_of_max_le_right hk ), le_max_left x y, le_max_right x y ] ⟩
+
+theorem computable_of_add (hf : f ∈ computable) (hg : g ∈ computable) :
+    (f + g) ∈ computable := by
+  obtain ⟨a, ha₁, ha₂⟩ := hf
+  obtain ⟨b, hb₁, hb₂⟩ := hg
+  use a + b
+  use Primrec.nat_add.to_comp.comp ha₁ hb₁
+  --TODO same as above
+  sorry
+
+variable (g)
+
+/--
+Proves goals of the form `f - g ∈ S`, where `S` is a `GrowthRate`.
+-/
+syntax (name := growthRate_sub) "growthRate_sub" : tactic
+macro_rules
+  | `(tactic| growthRate_sub) => `(tactic| (
+    simp only [bigO, exp, polylog, sublinear, quasilinear, poly, quasipoly, primitiveRecursive, computable,
+      Asymptotics.isBigO_iff, Asymptotics.isLittleO_iff,
+      Int.norm_natCast, Filter.eventually_atTop, Set.mem_setOf_eq] at *
+    peel ‹_› with h
+    exact (Nat.cast_le.mpr <| Nat.sub_le ..).trans h))
+
+theorem const_of_sub (hf : f ∈ const) : (f - g) ∈ const := by growthRate_sub
+
+theorem log_of_sub (hf : f ∈ log) : (f - g) ∈ log := by growthRate_sub
+
+theorem polylog_of_sub (hf : f ∈ polylog) : (f - g) ∈ polylog := by growthRate_sub
+
+theorem sqrt_of_sub (hf : f ∈ sqrt) : (f - g) ∈ sqrt := by growthRate_sub
+
+theorem sublinear_of_sub (hf : f ∈ sublinear) : (f - g) ∈ sublinear := by growthRate_sub
+
+theorem linear_of_sub (hf : f ∈ linear) : (f - g) ∈ linear := by growthRate_sub
+
+theorem linarithmic_of_sub (hf : f ∈ linarithmic) : (f - g) ∈ linarithmic := by growthRate_sub
+
+theorem quasilinear_of_sub (hf : f ∈ quasilinear) : (f - g) ∈ quasilinear := by growthRate_sub
+
+theorem poly_of_sub (hf : f ∈ poly) : (f - g) ∈ poly := by growthRate_sub
+
+theorem quasipoly_of_sub (hf : f ∈ quasipoly) : (f - g) ∈ quasipoly := by growthRate_sub
+
+theorem two_pow_of_sub (hf : f ∈ two_pow) : (f - g) ∈ two_pow := by growthRate_sub
+
+theorem e_pow_of_sub (hf : f ∈ e_pow) : (f - g) ∈ e_pow := by growthRate_sub
+
+theorem exp_of_sub (hf : f ∈ exp) : (f - g) ∈ exp := by growthRate_sub
+
+theorem primitiveRecursive_of_sub (hf : f ∈ primitiveRecursive) : (f - g) ∈ primitiveRecursive := by growthRate_sub
+
+theorem computable_of_sub (hf : f ∈ computable) : (f - g) ∈ computable := by growthRate_sub
+
+end closure
+
 section ordering
 
 theorem const_subset_log : const ⊆ log := by
@@ -191,7 +406,7 @@ theorem const_ssubset_log : const ⊂ log := by
     intro x n;
     cases' exists_nat_gt x with k hk;
     exact ⟨ 2 ^ ( n + k + 1 ), by linarith [ @Nat.lt_two_pow_self ( n + k + 1 ) ], by rw [ Nat.log_pow ( by norm_num ) ] ; simpa using by linarith ⟩
-  · apply Asymptotics.isBigO_refl _ _
+  · apply Asymptotics.isBigO_refl
 
 theorem log_ssubset_polylog : log ⊂ polylog := by
   rw [log, polylog, ssubset_iff_subset_not_subset]
@@ -202,7 +417,7 @@ theorem log_ssubset_polylog : log ⊂ polylog := by
     convert h
   · simp only [bigO, Set.setOf_subset_setOf, forall_exists_index, not_forall,
       Classical.not_imp, exists_and_right]
-    use fun n ↦ (Nat.log 2 n) ^ 2, 2, Asymptotics.isBigO_refl _ _
+    use fun n ↦ (Nat.log 2 n) ^ 2, 2, Asymptotics.isBigO_refl ..
     norm_num [Asymptotics.isBigO_iff]
     intro x y
     obtain ⟨n, hn⟩ := exists_nat_gt x
@@ -283,24 +498,25 @@ theorem polylog_ssubset_sqrt : polylog ⊂ sqrt := by
 theorem sqrt_subset_sublinear : sqrt ⊆ sublinear := by
   simp [sqrt, sublinear, bigO]
   intro f hf
+  refine hf.trans_isLittleO ?_; clear f hf
   erw [ Asymptotics.isLittleO_iff ];
-  rw [ Asymptotics.isBigO_iff ] at *
   intro c a
   simp_all only [Int.norm_natCast, Filter.eventually_atTop, ge_iff_le]
-  obtain ⟨w, h⟩ := hf
-  obtain ⟨w_1, h⟩ := h
-  cases' exists_nat_gt ( w / c ) with M hM;
-  refine' ⟨ w_1 + M^2 + 1, fun m hm => le_trans ( h _ <| by nlinarith ) _ ⟩;
-  rw [ div_lt_iff₀ a ] at hM;
-  nlinarith [ show ( m:ℝ ) ≥ M ^ 2 + 1 by norm_cast; nlinarith only [ hm ], sq_nonneg ( ( M:ℝ ) - Nat.sqrt m ), ( by norm_cast : ( w_1:ℝ ) + M ^ 2 +1 ≤ m ), show ( Nat.sqrt m:ℝ ) ^ 2 ≤ m by exact_mod_cast Nat.sqrt_le' m ]
+  use Nat.ceil ( ( 1 / c ) ^ 2 );
+  intro b hb;
+  have : (1 : ℝ) / c ≤ Real.sqrt b := (Real.le_sqrt_of_sq_le <| by simpa using hb );
+  rw [ div_le_iff₀ ( by positivity ) ] at this;
+  nlinarith [ show ( Nat.sqrt b :ℝ ) ≤ Real.sqrt ↑b by exact Real.le_sqrt_of_sq_le <| mod_cast Nat.sqrt_le' b, Real.sq_sqrt <| Nat.cast_nonneg b ]
 
 theorem sqrt_ssubset_sublinear : sqrt ⊂ sublinear := by
+  use sqrt_subset_sublinear
+  simp only [sqrt, sublinear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset]
   sorry
 
 theorem sublinear_ssubset_linear : sublinear ⊂ linear := by
   simp only [sublinear, linear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset]
   push_neg
-  use fun _ ↦ Asymptotics.IsLittleO.isBigO, id, Asymptotics.isBigO_refl _ _
+  use fun _ ↦ Asymptotics.IsLittleO.isBigO, id, Asymptotics.isBigO_refl ..
   apply Asymptotics.isLittleO_irrefl'
   apply Filter.Eventually.frequently
   rw [Filter.eventually_atTop]
@@ -474,7 +690,7 @@ theorem exp_ssubset_primitiveRecursive : exp ⊂ primitiveRecursive := by
   rw [Set.not_subset]
   use Nat.factorial
   constructor
-  · exact ⟨_, Nat.Primrec_factorial, Asymptotics.isBigO_refl _ _⟩
+  · exact ⟨_, Nat.Primrec_factorial, Asymptotics.isBigO_refl ..⟩
   · exact factorial_not_mem_exp
 
 theorem primitiveRecursive_subset_computable : primitiveRecursive ⊆ computable := by
