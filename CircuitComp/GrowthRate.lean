@@ -237,6 +237,20 @@ computable := setOf ...
 
 section add
 
+theorem bigO_add {f g a b: ℕ → ℕ} (hf : f ∈ bigO a) (hg : g ∈ bigO b) : f + g ∈ bigO (a + b) := by
+  rw [bigO, Set.mem_setOf_eq, Asymptotics.isBigO_iff]
+  obtain ⟨x, hx₁, hx₂⟩ := hf.exists_pos
+  obtain ⟨y, hy₁, hy₂⟩ := hg.exists_pos
+  simp only [Pi.add_apply, Nat.cast_add, Filter.eventually_atTop]
+  rw [ Asymptotics.IsBigOWith ] at hx₂ hy₂
+  simp_all only [gt_iff_lt, Int.norm_natCast, Filter.eventually_atTop, ge_iff_le]
+  obtain ⟨w, h⟩ := hx₂
+  obtain ⟨w_1, h_1⟩ := hy₂
+  norm_num [ Norm.norm ] at *;
+  exact ⟨x ⊔ y, w ⊔ w_1, fun k hk => by
+    rw [ abs_of_nonneg ( by positivity : ( f k : ℝ ) + g k ≥ 0 ), abs_of_nonneg ( by positivity : ( a k + b k : ℝ ) ≥ 0 ) ]
+    nlinarith [ h k ( le_of_max_le_left hk ), h_1 k ( le_of_max_le_right hk ), le_max_left x y, le_max_right x y ] ⟩
+
 theorem const_of_add (hf : f ∈ const) (hg : g ∈ const) : (f + g) ∈ const :=
   hf.add hg
 
@@ -337,31 +351,14 @@ theorem primitiveRecursive_of_add (hf : f ∈ primitiveRecursive) (hg : g ∈ pr
     (f + g) ∈ primitiveRecursive := by
   obtain ⟨a, ha₁, ha₂⟩ := hf
   obtain ⟨b, hb₁, hb₂⟩ := hg
-  use a + b
-  rw [← Primrec.nat_iff] at *
-  use Primrec.nat_add.comp ha₁ hb₁
-  --TODO: Should be its own lemma about bigO on natural functions
-  rw [bigO, Set.mem_setOf_eq, Asymptotics.isBigO_iff]
-  obtain ⟨x, hx₁, hx₂⟩ := ha₂.exists_pos
-  obtain ⟨y, hy₁, hy₂⟩ := hb₂.exists_pos
-  simp only [Pi.add_apply, Nat.cast_add, Filter.eventually_atTop]
-  rw [ Asymptotics.IsBigOWith ] at hx₂ hy₂
-  simp_all only [gt_iff_lt, Int.norm_natCast, Filter.eventually_atTop, ge_iff_le]
-  obtain ⟨w, h⟩ := hx₂
-  obtain ⟨w_1, h_1⟩ := hy₂
-  norm_num [ Norm.norm ] at *;
-  exact ⟨x ⊔ y, w ⊔ w_1, fun k hk => by
-    rw [ abs_of_nonneg ( by positivity : ( f k : ℝ ) + g k ≥ 0 ), abs_of_nonneg ( by positivity : ( a k + b k : ℝ ) ≥ 0 ) ]
-    nlinarith [ h k ( le_of_max_le_left hk ), h_1 k ( le_of_max_le_right hk ), le_max_left x y, le_max_right x y ] ⟩
+  simp_rw [primitiveRecursive, ← Primrec.nat_iff] at *
+  exact ⟨_, Primrec.nat_add.comp ha₁ hb₁, bigO_add ha₂ hb₂⟩
 
 theorem computable_of_add (hf : f ∈ computable) (hg : g ∈ computable) :
     (f + g) ∈ computable := by
   obtain ⟨a, ha₁, ha₂⟩ := hf
   obtain ⟨b, hb₁, hb₂⟩ := hg
-  use a + b
-  use Primrec.nat_add.to_comp.comp ha₁ hb₁
-  --TODO same as above
-  sorry
+  exact ⟨_, Primrec.nat_add.to_comp.comp ha₁ hb₁, bigO_add ha₂ hb₂⟩
 
 end add
 section sub
@@ -434,7 +431,9 @@ theorem sqrt_mul_const (hf : f ∈ sqrt) (hg : g ∈ const) : (f * g) ∈ sqrt :
   rfl
 
 theorem sublinear_mul_const (hf : f ∈ sublinear) (hg : g ∈ const) : (f * g) ∈ sublinear := by
-  sorry
+  convert hf.mul_isBigO hg
+  simp only [Pi.one_apply, Nat.cast_one, mul_one]
+  rfl
 
 theorem linear_mul_const (hf : f ∈ linear) (hg : g ∈ const) : (f * g) ∈ linear := by
   convert hf.mul hg
@@ -442,8 +441,11 @@ theorem linear_mul_const (hf : f ∈ linear) (hg : g ∈ const) : (f * g) ∈ li
   rfl
 
 theorem linear_of_sqrt_mul_sqrt (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f * g) ∈ linear := by
-  convert hf.mul hg
-  sorry
+  convert (hf.mul hg).trans ?_
+  rw [ Asymptotics.isBigO_iff' ]
+  simp
+  exact ⟨ 1, by norm_num, 0, fun b hb => by
+    norm_cast; nlinarith [ Nat.sqrt_le b ] ⟩
 
 theorem linarithmic_mul_const (hf : f ∈ linarithmic) (hg : g ∈ const) : (f * g) ∈ linarithmic := by
   convert hf.mul hg
@@ -456,7 +458,11 @@ theorem linarithmic_of_linear_mul_log (hf : f ∈ linarithmic) (hg : g ∈ const
   rfl
 
 theorem quasilinear_mul_polylog (hf : f ∈ quasilinear) (hg : g ∈ polylog) : (f * g) ∈ quasilinear := by
-  sorry
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  use a + b
+  convert ha.mul hb
+  simp [pow_add, mul_assoc]
 
 theorem poly_mul (hf : f ∈ poly) (hg : g ∈ poly) : (f * g) ∈ poly := by
   obtain ⟨a, ha⟩ := hf
@@ -466,7 +472,16 @@ theorem poly_mul (hf : f ∈ poly) (hg : g ∈ poly) : (f * g) ∈ poly := by
   simp [pow_add]
 
 theorem quasipoly_mul (hf : f ∈ quasipoly) (hg : g ∈ quasipoly) : (f * g) ∈ quasipoly := by
-  sorry
+  obtain ⟨a, ha⟩ := hf
+  obtain ⟨b, hb⟩ := hg
+  simp [quasipoly]
+  -- Let $C = a + b$. Then we have $(fun x => ((f x) * (g x)) : ℝ)$ is $O[Filter.atTop] ((fun n => (2 : ℝ) ^ ((Nat.log 2 n) ^ C) : ℕ → ℝ))$.
+  use a + b
+  convert (ha.mul hb).trans ?_
+  norm_num [Asymptotics.isBigO_iff, Norm.norm]
+  use 2, 2, fun k hk => ?_
+  rw [← pow_succ', Nat.pow_add, abs_of_nonneg (by positivity), ← pow_add]
+  exact pow_le_pow_right₀ one_le_two ( by nlinarith [ pow_pos ( show Nat.log 2 k > 0 from Nat.log_pos ( by norm_num ) hk ) a, pow_pos ( show Nat.log 2 k > 0 from Nat.log_pos ( by norm_num ) hk ) b ] );
 
 theorem two_pow_mul_const (hf : f ∈ two_pow) (hg : g ∈ const) : (f * g) ∈ two_pow := by
   convert hf.mul hg
@@ -479,7 +494,103 @@ theorem e_pow_mul_const (hf : f ∈ e_pow) (hg : g ∈ const) : (f * g) ∈ e_po
   rfl
 
 theorem e_pow_of_two_pow_mul_quasipoly (hf : f ∈ two_pow) (hg : g ∈ quasipoly) : (f * g) ∈ e_pow := by
-  sorry
+  simp [e_pow, bigO, two_pow, quasipoly] at *
+  simp [Asymptotics.isBigO_iff'] at hf hg
+  simp [Asymptotics.isBigO_iff]
+  obtain ⟨c₁, hc₁, k₁, h₁⟩ := hf
+  obtain ⟨C, c₂, hc₂, k₂, h₂⟩ := hg
+  use c₁
+  suffices hs : ∃ k, ∀ b ≥ k, (2 ^ b) * (c₂ * 2 ^ Nat.log 2 b ^ C) ≤ ⌈Real.exp b⌉₊ by
+    rcases hs with ⟨k, hk⟩
+    use k ⊔ k₁ ⊔ k₂
+    intro b hb
+    specialize h₁ b ((le_max_right _ _).trans <| (le_max_left _ _).trans hb)
+    specialize h₂ b ((le_max_right _ _).trans hb)
+    specialize hk b ((le_max_left _ _).trans <| (le_max_left _ _).trans hb)
+    simp only [norm, Int.cast_ofNat, Nat.abs_ofNat] at h₁ h₂
+    trans (c₁ * 2 ^ b) * (c₂ * 2 ^ Nat.log 2 b ^ C)
+    · gcongr
+    · rw [mul_assoc]
+      gcongr
+  clear c₁ hc₁ k₁ h₁ k₂ h₂
+  -- Simplifying the goal using properties of exponential functions and logs
+  suffices h_exp_log : ∃ k : ℕ, ∀ b ≥ k, (c₂ * 2 ^ (b + (Nat.log 2 b) ^ C)) ≤ (Nat.ceil ((Real.exp b : ℝ))) by
+    simpa only [ mul_assoc, mul_comm, mul_left_comm, pow_add ] using h_exp_log;
+  suffices h_exp_log : ∃ k : ℕ, ∀ b ≥ k, (c₂ * 2 ^ (b + (Nat.log 2 b) ^ C)) ≤ (Real.exp b) by
+    exact ⟨ h_exp_log.choose, fun n hn => by simpa only [ pow_add, mul_assoc ] using le_trans ( h_exp_log.choose_spec n hn ) ( Nat.le_ceil _ ) ⟩;
+  -- By dividing both sides of the inequality by $2^b$, we reduce it to showing that $c₂ * 2 ^ ((log2 b) ^ C) ≤ \exp(b - b \cdot \log_2(e))$.
+  suffices h₂ : ∃ k : ℕ, ∀ b ≥ k, (c₂ * 2 ^ ((Nat.log 2 b) ^ C)) ≤ (Real.exp (b * (1 - Real.log 2))) by
+    cases' h₂ with k hk;
+    use k; intro b hb; rw [ pow_add ] ; rw [ ← mul_comm ] ; specialize hk b hb; convert mul_le_mul_of_nonneg_left hk <| pow_nonneg zero_le_two b using 1 ;
+    · ring
+    · rw [ mul_sub, mul_one, Real.exp_sub ];
+      norm_num [ Real.exp_neg, Real.exp_nat_mul, Real.exp_log, mul_div_cancel₀ ];
+  -- We'll use that exponential functions grow faster than polynomial functions. Specifically, we'll find a $k$ such that for all $b \geq k$, $2^{(\log_2(b))^C}$ is dominated by $e^{b (1 - \log(2))}$.
+  suffices h_exp_poly : Filter.Tendsto (fun b : ℕ => (2 ^ ((Nat.log 2 b) ^ C) : ℝ) / Real.exp (b * (1 - Real.log 2))) Filter.atTop (nhds 0) by
+    have := h_exp_poly.eventually ( gt_mem_nhds <| show 0 < c₂⁻¹ by positivity ) ; aesop;
+    exact ⟨ _, fun n hn => by
+      have := h n hn
+      rw [ div_lt_iff₀ ( Real.exp_pos _ ) ] at this
+      nlinarith [ Real.exp_pos ( n * ( 1 - Real.log 2 ) ), inv_mul_cancel₀ ( ne_of_gt hc₂ ) ] ⟩;
+  -- Let $y = \log_2(b)$, therefore the expression becomes $\lim_{y \to \infty} \frac{2^{y^C}}{e^{2^y (1 - \log(2))}}$.
+  suffices h_log : Filter.Tendsto (fun y : ℕ => (2 ^ (y ^ C) : ℝ) / Real.exp (2 ^ y * (1 - Real.log 2))) Filter.atTop (nhds 0) by
+    refine' squeeze_zero_norm' _ ( h_log.comp ( _ ) );
+    case refine'_2 => use fun x => Nat.log 2 x;
+    -- Case 1
+    · aesop;
+      refine' ⟨ 4, fun n hn => _ ⟩;
+      gcongr;
+      -- Case 1
+      · linarith [ Real.log_le_sub_one_of_pos zero_lt_two ];
+      -- Case 2
+      · exact_mod_cast Nat.pow_log_le_self 2 <| by linarith;
+    -- Case 2
+    · rw [ Filter.tendsto_atTop_atTop ];
+      exact fun b => ⟨ 2 ^ b, fun a ha => Nat.le_log_of_pow_le ( by norm_num ) ha ⟩;
+  -- Taking the natural logarithm of the expression inside the limit, we get $\lim_{y \to \infty} (y^C \ln(2) - 2^y (1 - \ln(2)))$.
+  suffices h_ln : Filter.Tendsto (fun y : ℕ => y ^ C * Real.log 2 - 2 ^ y * (1 - Real.log 2)) Filter.atTop Filter.atBot by
+    -- If the natural logarithm of the expression tends to $-\infty$, then the expression tends to $0$.
+    have h_exp_ln : Filter.Tendsto (fun y : ℕ => Real.exp (y ^ C * Real.log 2 - 2 ^ y * (1 - Real.log 2))) Filter.atTop (nhds 0) := by
+      aesop;
+    convert h_exp_ln using 1;
+    norm_num [ Real.exp_sub, Real.exp_nat_mul, Real.exp_log ];
+    exact funext fun x => by
+      rw [ ← Real.rpow_natCast, Real.rpow_def_of_pos ( by positivity ) ]
+      norm_num [mul_comm]
+  -- We'll use that exponential functions grow faster than polynomial functions under the given conditions.
+  have h_exp_poly : Filter.Tendsto (fun y : ℕ => (2 : ℝ) ^ y / y ^ C) Filter.atTop Filter.atTop := by
+    -- Recognize that this is a special case of the exponential function $a^x / x^C$ where $a = 2$.
+    suffices h_exp : Filter.Tendsto (fun x : ℝ => Real.exp (x * Real.log 2) / x ^ C) Filter.atTop Filter.atTop by
+      convert h_exp.comp tendsto_natCast_atTop_atTop using 2 ; norm_num [ Real.exp_nat_mul, Real.exp_log ];
+    -- Let $y = x \log 2$, therefore the limit becomes $\lim_{y \to \infty} \frac{e^y}{y^C}$.
+    suffices h_limit_y : Filter.Tendsto (fun y : ℝ => Real.exp y / y ^ C) Filter.atTop Filter.atTop by
+      have h_subst : Filter.Tendsto (fun x : ℝ => Real.exp (x * Real.log 2) / (x * Real.log 2) ^ C) Filter.atTop Filter.atTop := by
+        exact h_limit_y.comp <| Filter.tendsto_id.atTop_mul_const <| Real.log_pos <| by norm_num;
+      -- We simplify the expression $\frac{e^{x \ln 2}}{(x \ln 2)^C}$ to $\frac{e^{x \ln 2}}{x^C (\ln 2)^C}$.
+      have h_simplify : Filter.Tendsto (fun x : ℝ => Real.exp (x * Real.log 2) / x ^ C / (Real.log 2) ^ C) Filter.atTop Filter.atTop := by
+        simpa only [ mul_pow, div_div ] using h_subst;
+      convert h_simplify.atTop_mul_const ( pow_pos ( Real.log_pos one_lt_two ) C ) using 2
+      ring_nf
+      norm_num [ mul_assoc, mul_comm, mul_left_comm ]
+    exact Real.tendsto_exp_div_pow_atTop _;
+  -- Rewrite the limit expression using the property of limits: $\lim_{y \to \infty} (y^C \ln(2) - 2^y (1 - \ln(2))) = \lim_{y \to \infty} y^C (\ln(2) - \frac{2^y (1 - \ln(2))}{y^C})$.
+  have h_rewrite : Filter.Tendsto (fun y : ℕ => (y ^ C : ℝ) * (Real.log 2 - (2 ^ y * (1 - Real.log 2)) / y ^ C)) Filter.atTop Filter.atBot := by
+    -- Since $\frac{2^y (1 - \ln(2))}{y^C}$ tends to infinity, $\ln(2) - \frac{2^y (1 - \ln(2))}{y^C}$ tends to $-\infty$.
+    have h_ln_tendsto : Filter.Tendsto (fun y : ℕ => Real.log 2 - (2 ^ y * (1 - Real.log 2)) / y ^ C) Filter.atTop Filter.atBot := by
+      -- Since $1 - \ln(2)$ is positive, multiplication by $(1 - \ln(2))$ preserves the limit.
+      have h_mul : Filter.Tendsto (fun y : ℕ => (2 ^ y * (1 - Real.log 2)) / y ^ C) Filter.atTop Filter.atTop := by
+        simpa only [ mul_div_right_comm ] using h_exp_poly.atTop_mul_const ( sub_pos.mpr <| Real.log_two_lt_d9.trans_le <| by norm_num );
+      rw [ Filter.tendsto_atTop_atBot ];
+      exact fun x => Filter.eventually_atTop.mp ( h_mul.eventually_gt_atTop ( Real.log 2 - x ) ) |> fun ⟨ N, hN ⟩ ↦ ⟨ N, fun n hn ↦ by linarith [ hN n hn ] ⟩;
+    rw [ Filter.tendsto_atTop_atBot ] at *;
+    intro b;
+    obtain ⟨ i, hi ⟩ := h_ln_tendsto ( Min.min b 0 );
+    exact ⟨ i + 1, fun j hj => le_trans ( mul_le_mul_of_nonneg_left ( hi _ ( by linarith ) ) ( by positivity ) ) <|
+      by nlinarith [ min_le_left b 0, min_le_right b 0,
+        show ( j:ℝ ) ^ C ≥ 1 from one_le_pow₀ ( by norm_cast; linarith ) ] ⟩;
+  refine' h_rewrite.congr' ( by filter_upwards [ Filter.eventually_ne_atTop 0 ] with y hy using (by
+    rw [ mul_sub, mul_div_cancel₀ _ ( by positivity ) ] ))
+
 
 theorem exp_mul (hf : f ∈ exp) (hg : g ∈ exp) : (f * g) ∈ exp := by
   obtain ⟨a, ha⟩ := hf
@@ -527,7 +638,7 @@ theorem const_ssubset_log : const ⊂ log := by
   · norm_num [ Filter.IsBoundedUnder, Filter.IsBounded ];
     intro x n;
     cases' exists_nat_gt x with k hk;
-    exact ⟨ 2 ^ ( n + k + 1 ), by linarith [ @Nat.lt_two_pow_self ( n + k + 1 ) ], by rw [ Nat.log_pow ( by norm_num ) ] ; simpa using by linarith ⟩
+    exact ⟨ 2 ^ ( n + k + 1 ), by linarith [ @Nat.lt_two_pow_self ( n + k + 1 ) ], by rw [ Nat.log_pow ( by norm_num ) ] ; push_cast; linarith ⟩
   · apply Asymptotics.isBigO_refl
 
 theorem log_ssubset_polylog : log ⊂ polylog := by
@@ -549,6 +660,7 @@ theorem log_ssubset_polylog : log ⊂ polylog := by
     · norm_num [Nat.log_pow]
       nlinarith
 
+
 theorem polylog_subset_sqrt : polylog ⊆ sqrt := by
   intros f hf
   rw [polylog] at hf
@@ -556,7 +668,7 @@ theorem polylog_subset_sqrt : polylog ⊆ sqrt := by
   rw [ Asymptotics.isBigO_iff' ] at hk;
   rcases hk with ⟨ c, hc₀, hfc ⟩;
   -- Now consider the inequality $\|f x\| \leq c \| \log^k x \|$ for all sufficiently large $x$.
-  have h_bound : ∃ N, ∀ x ≥ N, (f x : ℝ) ≤ c * Real.logb 2 x ^ k := by
+  obtain ⟨ N, hN ⟩ : ∃ N, ∀ x ≥ N, (f x : ℝ) ≤ c * Real.logb 2 x ^ k := by
     simp_all only [gt_iff_lt, Int.norm_natCast, Nat.cast_pow, norm_pow, Filter.eventually_atTop, ge_iff_le]
     obtain ⟨w, h⟩ := hfc
     refine ⟨ w + 2, fun x hx ↦ le_trans ( h x <| by linarith ) ?_ ⟩;
@@ -565,21 +677,25 @@ theorem polylog_subset_sqrt : polylog ⊆ sqrt := by
       rw [ Real.le_logb_iff_rpow_le ( by norm_num ) ( by norm_cast; linarith ) ] ; norm_cast;
       rw [ Nat.pow_le_iff_le_log ] <;> linarith;
     exact this
-  obtain ⟨ N, hN ⟩ := h_bound;
   -- Show that $ c * \log^k x \leq \sqrt{x} $ for all sufficiently large $ x $.
-  have h_sqrt : ∃ M, ∀ x ≥ M, c * Real.logb 2 x ^ k ≤ Real.sqrt x := by
+  obtain ⟨ M, hM ⟩ : ∃ M, ∀ x ≥ M, c * Real.logb 2 x ^ k ≤ Real.sqrt x := by
     -- To prove the bound, we can use the fact that for large enough $x$, $(Real.logb 2 x) ^ k / \sqrt{x}$ tends to $0$.
     have h_limit : Filter.Tendsto (fun x : ℝ => (Real.logb 2 x) ^ k / Real.sqrt x) Filter.atTop (nhds 0) := by
       -- Let `y = log₂ x`, therefore the expression becomes `(y ^ k) / Real.sqrt (2 ^ y)`.
       suffices h_subst : Filter.Tendsto (fun y : ℝ => y ^ k / Real.sqrt (2 ^ y)) Filter.atTop (nhds 0) by
-        have := h_subst.comp ( Real.tendsto_logb_atTop ( by norm_num : ( 1 : ℝ ) < 2 ) );
-        exact this.congr' ( by filter_upwards [ Filter.eventually_gt_atTop 0 ] with x hx using by simp ( config := { decide := Bool.true } ) [ Real.sqrt_eq_rpow, Real.rpow_logb, hx ] );
+        exact (h_subst.comp ( Real.tendsto_logb_atTop one_lt_two)).congr' (by
+          filter_upwards [ Filter.eventually_gt_atTop 0 ] with x hx
+          simp [ Real.sqrt_eq_rpow, Real.rpow_logb, hx ] );
       -- We'll use the exponential property: $\sqrt{2^y} = 2^{y/2}$.
       suffices h_exp : Filter.Tendsto (fun y : ℝ => y ^ k / 2 ^ (y / 2)) Filter.atTop (nhds 0) by
-        convert h_exp using 3 ; rw [ Real.sqrt_eq_rpow, ← Real.rpow_mul ( by norm_num ) ] ; ring;
+        convert h_exp using 3
+        rw [ Real.sqrt_eq_rpow, ← Real.rpow_mul ( by norm_num ) ]
+        ring_nf
       -- Let `z = y / 2`, therefore the expression becomes `(2z)^k / e^{z * Real.log 2} = 2^k * z^k / e^{z * Real.log 2}`.
       suffices h_z : Filter.Tendsto (fun z : ℝ => (2 ^ k : ℝ) * z ^ k / Real.exp (z * Real.log 2)) Filter.atTop (nhds 0) by
-        convert h_z.comp ( Filter.tendsto_id.atTop_mul_const <| show ( 2 : ℝ ) ⁻¹ > 0 by positivity ) using 2 ; norm_num ; ring;
+        convert h_z.comp ( Filter.tendsto_id.atTop_mul_const <| show ( 2 : ℝ ) ⁻¹ > 0 by positivity ) using 2
+        norm_num
+        ring_nf
         simp [ Real.rpow_def_of_pos, mul_assoc, mul_left_comm (Real.log 2) ]
       -- We'll use the fact that $Real.exp (z * Real.log 2)$ grows much faster than $z^k$ for any $k$.
       have h_exp_growth : Filter.Tendsto (fun z : ℝ => z ^ k / Real.exp (z * Real.log 2)) Filter.atTop (nhds 0) := by
@@ -601,16 +717,17 @@ theorem polylog_subset_sqrt : polylog ⊆ sqrt := by
       rw [ div_lt_iff₀ (by positivity) ] at this
       nlinarith [ le_max_right a 2, Real.sqrt_nonneg x, inv_mul_cancel₀ <| ne_of_gt hc₀,
         Real.sq_sqrt h₂.le ] ⟩;
-  choose M hM using h_sqrt;
   -- Let $x \geq \max(N, M)$.
-  have h_final : ∃ K, ∀ x ≥ K, (f x : ℝ) ≤ Real.sqrt x := by
-    exact ⟨ ⌈M⌉₊ + N, fun x hx => le_trans ( hN x ( by linarith ) ) ( by simpa using hM x ( le_trans ( Nat.le_ceil _ ) ( mod_cast by linarith ) ) ) ⟩;
+  obtain ⟨w_1, h_1⟩ : ∃ K, ∀ x ≥ K, f x ≤ Real.sqrt x :=
+    ⟨⌈M⌉₊ + N, fun x hx => (hN x (by linarith)).trans
+        ( by simpa using hM x (( Nat.le_ceil _ ).trans ( mod_cast by linarith ) ) ) ⟩
   simp_all only [gt_iff_lt, Int.norm_natCast, Nat.cast_pow, norm_pow, Filter.eventually_atTop, ge_iff_le]
-  obtain ⟨w, h⟩ := hfc
-  obtain ⟨w_1, h_1⟩ := h_final
-  refine' Asymptotics.isBigO_iff.mpr _;
-  use 1; norm_num;
-  exact ⟨ w_1 + 1, fun b hb => Nat.le_sqrt.mpr <| by have := h_1 b ( le_of_lt hb ) ; rw [ Real.le_sqrt ] at * <;> norm_cast at * <;> linarith ⟩
+  apply Asymptotics.isBigO_iff.mpr
+  use 1
+  norm_num;
+  exact ⟨ w_1 + 1, fun b hb => Nat.le_sqrt.mpr <| by
+    specialize h_1 b (by bound)
+    rw [ Real.le_sqrt ] at * <;> norm_cast at * <;> linarith ⟩
 
 theorem polylog_ssubset_sqrt : polylog ⊂ sqrt := by
   use polylog_subset_sqrt
