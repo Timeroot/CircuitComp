@@ -99,9 +99,9 @@ def relabelOut (hF : F.depth ≠ 0) (e : out ≃ a) : FeedForward α inp a :=
     gates k n := if hk : k = ⊤ then
         have g := F.gates k (by simp [Fin.top_eq_last, hk] at n ⊢; exact e.symm n)
         ⟨g.op, have gi := g.inputs; fun i ↦ by simp [hk, Fin.top_eq_last, Fin.castSucc] at gi ⊢; exact sorry⟩
-      else cast (by simp [hk, Fin.top_eq_last, (Fin.castSucc_lt_last k).ne]) (F.gates k sorry)
+      else cast (by simp [Fin.top_eq_last, (Fin.castSucc_lt_last k).ne]) (F.gates k sorry)
     nodes_zero := by simp [hF]
-    nodes_last := by simp [hF, Fin.top_eq_last]
+    nodes_last := by simp [Fin.top_eq_last]
   }
 
 /-- Compose two `FeedForward`s by stacking one on top of the other. -/
@@ -169,6 +169,7 @@ infinite, the whole sum will be zero. -/
 noncomputable def size : ℕ :=
   Nat.card (@Sigma (Fin F.depth) (fun d ↦ F.nodes d.succ))
 
+/-- We call a circuit finite if the number of nodes is finite. -/
 def finite : Prop :=
   ∀ i, Finite (F.nodes i)
 
@@ -189,9 +190,9 @@ end FeedForward
 open FeedForward
 
 /-- A `CircuitFamily` is a collection of `FeedForward` circuits parameterized by an input size `n`.
-The `n`th circuit must have input type `Fin n`, and a `Unit` output. -/
+The `n`th circuit must have input type `Fin n`, and a `Fin 1` output. -/
 def CircuitFamily (α : Type u) :=
-  (n : ℕ) → FeedForward α (Fin n) Unit
+  (n : ℕ) → FeedForward α (Fin n) (Fin 1)
 
 namespace CircuitFamily
 

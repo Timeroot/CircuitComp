@@ -1,4 +1,3 @@
-import CircuitComp.Basic
 import CircuitComp.NC
 
 import Mathlib.Algebra.MvPolynomial.Eval
@@ -25,9 +24,9 @@ Also define `ACi`, which is like AC₀ but has `log(n)^i` depth. `AC` is the uni
 -/
 
 def AC₀_GateOps : Set (GateOp (Fin 2)) :=
-  {⟨Unit, fun x ↦ 1 - x ()⟩} --NOT
+  {⟨Fin 1, fun x ↦ 1 - x 0⟩} --NOT
   ∪
-  ⋃ n, {⟨Fin n, fun x ↦ ∏ i, x i⟩} --ANDs of all arity
+  ⋃ n, {⟨Fin n, fun x ↦ ∏ i, x i⟩} --ANDs of all arity (including Id)
 
 /-- AC₀, the constant-depth polynomial-size circuits of NOT gates and arbitrary-arity AND gates. -/
 def AC₀ : Set (FuncFamily (Fin 2)) :=
@@ -55,7 +54,10 @@ theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
   rw [NC₀_GateOps, AC₀_GateOps]
   simp only [Set.mem_insert_iff, Set.mem_singleton_iff, Set.iUnion_singleton_eq_range,
     Set.singleton_union, Set.mem_range]
-  rintro (rfl|rfl)
+  rintro (rfl|rfl|rfl)
+  · right
+    use 1
+    simp
   · simp
   · right
     use 2
@@ -65,7 +67,7 @@ theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
 theorem AND_mem_AC₀ : FuncFamily.AND ∈ AC₀ := by
   use (fun n ↦ ⟨
     1,
-    ![Fin n, Unit],
+    ![Fin n, Fin 1],
     fun d h ↦ ⟨⟨Fin n, fun x ↦ ∏ i, x i⟩, by rw [Fin.fin_one_eq_zero d]; exact id⟩,
     rfl,
     rfl
@@ -76,8 +78,7 @@ theorem AND_mem_AC₀ : FuncFamily.AND ∈ AC₀ := by
     rfl
   · intro n
     rw [FeedForward.finite]
-    simp only [Fin.isValue, Fin.castSucc_zero, Matrix.cons_val_zero, id_eq, eq_mpr_eq_cast,
-      Fin.reduceLast, Matrix.cons_val_one, Nat.reduceAdd]
+    simp only [Fin.isValue, Fin.castSucc_zero, Matrix.cons_val_zero, eq_mpr_eq_cast, Nat.reduceAdd]
     intro i
     fin_cases i <;> simp <;> infer_instance
   · simp [size]
@@ -97,7 +98,7 @@ theorem NC₀_ssubset_AC₀ : NC₀ ⊂ AC₀ := by
   exact (ne_of_mem_of_not_mem' AND_mem_AC₀ AND_not_mem_NC₀).symm
 
 /-- Functions in AC₀ are well approximated by a low-degree polynomial in 𝔽₃. -/
-theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Fin 3)),
+theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial (Fin n) (ZMod 3)),
     --The degree is polylog(n)
     (MvPolynomial.totalDegree <| P · : ℕ → ℕ) ∈ GrowthRate.polylog
     ∧
@@ -113,7 +114,7 @@ theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial 
   sorry
 
 /-- The parity function is not well approximated by low-degree polynomials in 𝔽₃. -/
-theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Fin 3)),
+theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (ZMod 3)),
     --The degree is polylog(n)
     (MvPolynomial.totalDegree <| P · : ℕ → ℕ) ∈ GrowthRate.polylog
     ∧

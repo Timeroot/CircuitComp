@@ -3,7 +3,7 @@ import Mathlib.Data.Fintype.EquivFin
 --is there a reason these aren't already simps in mathlib?
 @[simp]
 theorem setOf_eq_empty_iff {α : Type*} (p : α → Prop) : { x | p x } = ∅ ↔ ∀ x, ¬p x :=
-  Set.eq_empty_iff_forall_not_mem
+  Set.eq_empty_iff_forall_notMem
 
 @[simp]
 theorem Finset.filter_univ_eq_empty_iff {α : Type*} [Fintype α] (p : α → Prop) [DecidablePred p] :

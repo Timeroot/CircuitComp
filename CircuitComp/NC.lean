@@ -7,8 +7,8 @@ open CircuitFamily
 
 /-- A fairly minimal set of gates for NC classes: just NOT and AND. -/
 def NC₀_GateOps : Set (GateOp (Fin 2)) :=
-  {⟨_, (· ())⟩, --Id
-   ⟨Unit, fun x ↦ 1 - x ()⟩, --NOT
+  {⟨Fin 1, (· 0)⟩, --Id
+   ⟨Fin 1, fun x ↦ 1 - x 0⟩, --NOT
   ⟨Fin 2, fun x ↦ x 0 * x 1⟩} --AND
 
 /-- The circuit class of nonuniform NC⁰: constant depth polynomial-size circuits with
@@ -60,28 +60,30 @@ theorem AND_mem_NCi_1 : FuncFamily.AND ∈ NCi 1 := by
   --Prove by constructing the circuit
   use (by
     intro n --for each n, construct a circuit
-    use Nat.clog 2 n + 1--depth
-      --the width at layer k is n/2^k, except for the last layer which must be `Unit`.
-    · use fun k ↦ if k = Fin.last _ then Unit else Fin ⌈n / (2^k.val : ℝ)⌉₊
+    use Nat.clog 2 n--depth
+      --the width at layer k is n/2^k, at the last layer this means we're `Fin 1`.
+    · use fun k ↦ Fin ⌈n / (2^k.val : ℝ)⌉₊
     ·  --describe the gates at each layer
       intro d x
-      split_ifs at x with h
-      · use ⟨_, (· ())⟩ --at the last layer, we have an `Id` gate from Fin 1 to Unit
+      -- split_ifs at x with h
+      -- · use ⟨_, (· ())⟩ --at the last layer, we have an `Id` gate from Fin 1 to Fin 1
+      --   intro
+      --   exact cast (by rw [if_neg]; sorry; sorry) (0 : Fin 1)
+      --at all other layers, we take an AND-2 gate from indices `2x` and `2x+1` to `x`.
+      by_cases hx : x.val + 1 = ⌈↑n / 2 ^ d.succ.val⌉₊ ∧ (⌈↑n / 2 ^ d.val⌉₊ % 2 == 1)
+      · --Well, if x is the last one in its layer and the parent layer is odd,
+        --then we just use an identity gate.
+        use ⟨_, (· 0)⟩
         intro
-        exact cast (by rw [if_neg]; sorry; sorry) (0 : Fin 1)
-      · --at all other layers, we take an AND-2 gate from indices `2x` and `2x+1` to `x`.
-        by_cases hx : x.val + 1 = ⌈↑n / 2 ^ d.succ.val⌉₊ ∧ (⌈↑n / 2 ^ d.val⌉₊ % 2 == 1)
-        · --Well, if x is the last one in its layer and the parent layer is odd,
-          --then we just use an identity gate.
-          use ⟨_, (· ())⟩
-          intro
-          exact cast (dif_neg (by sorry)).symm ⟨2*x.val, by sorry⟩
-        · --otherwise we take the AND
-          use ⟨Fin 2, fun x ↦ x 0 * x 1⟩
-          intro (i : Fin 2)
-          exact cast (dif_neg (by sorry)).symm ⟨2*x.val + i, by sorry⟩
+        exact ⟨2*x.val, by sorry⟩
+      · --otherwise we take the AND
+        use ⟨Fin 2, fun x ↦ x 0 * x 1⟩
+        intro (i : Fin 2)
+        exact ⟨2*x.val + i, by sorry⟩
     · simp
-    · simp
+    · congr 1
+      simp
+      sorry
   )
   --Split up the four conditions on the family
   refine .intro ?_ <| .intro ?_ <| .intro ?_ ?_
@@ -89,16 +91,14 @@ theorem AND_mem_NCi_1 : FuncFamily.AND ∈ NCi 1 := by
     sorry
   · constructor
     · dsimp [CircuitFamily.finite, FeedForward.finite]
-      intro n i
-      split <;> infer_instance
+      infer_instance
     · dsimp [size]
       conv =>
         enter [2, n]
         rw [@Nat.card_sigma _ _ _ ?_]
         rfl
         tactic =>
-          intro
-          split <;> infer_instance
+          infer_instance
       sorry
   · dsimp [hasDepth]
     --TODO should be simp
@@ -107,6 +107,5 @@ theorem AND_mem_NCi_1 : FuncFamily.AND ∈ NCi 1 := by
     dsimp
     split
     · simp [NC₀_GateOps]
-    split
-    · simp [NC₀_GateOps]
-    · simp [NC₀_GateOps]
+      sorry
+    simp [NC₀_GateOps]

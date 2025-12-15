@@ -57,6 +57,9 @@ namespace GrowthRate
 def bigO (g : ℕ → ℕ) : GrowthRate :=
   setOf <| fun f ↦ (f · : ℕ → ℤ) =O[.atTop] (g · : ℕ → ℤ)
 
+def littleO (g : ℕ → ℕ) : GrowthRate :=
+  setOf <| fun f ↦ (f · : ℕ → ℤ) =o[.atTop] (g · : ℕ → ℤ)
+
 section defs
 --Defining the rate classes, sorted in order of growing more quickly.
 --Summary:
@@ -86,7 +89,7 @@ abbrev const := bigO 1
 abbrev log := bigO (Nat.log 2)
 
 /-- Polylogarithmic growth rates: `(log n) ^ O(1)` -/
-abbrev polylog : GrowthRate :=
+def polylog : GrowthRate :=
   setOf <| fun f ↦ ∃ C,
     (f · : ℕ → ℤ) =O[.atTop] (fun n ↦ ↑(Nat.log 2 n ^ C) : ℕ → ℤ)
 
@@ -94,8 +97,7 @@ abbrev polylog : GrowthRate :=
 abbrev sqrt := bigO Nat.sqrt
 
 /-- Sublinear growth rates: `o(n)` -/
-def sublinear : GrowthRate :=
-  setOf <| fun f ↦ (f · : ℕ → ℤ) =o[.atTop] (· : ℕ → ℤ)
+abbrev sublinear := littleO id
 
 /-- Linear growth rates: `O(n)` -/
 abbrev linear := bigO id
@@ -150,6 +152,130 @@ def computable : GrowthRate :=
     Computable g ∧ f ∈ bigO g
 
 end defs
+
+section lawful
+
+/-- We call a `GrowthRate` *lawful* if it is closed under dominating sequences
+and addition. This is enough to get most desirable properties. For instance,
+all big-O and little-O rates are lawful, as is `poly`. -/
+class LawfulGrowthRate (S : GrowthRate) : Prop where
+  /-- If a function `f` is in S and it dominates `g` (is eventually greater than g), then `g ∈ S`. -/
+  mem_dominating {f g : ℕ → ℕ} : (∀ᶠ x in .atTop, g x ≤ f x) → (f ∈ S) → g ∈ S
+  /-- S is closed under addition. -/
+  mem_add {f g : ℕ → ℕ} : (f ∈ S) → (g ∈ S) → (f + g ∈ S)
+
+instance instLawfulBigO (f : ℕ → ℕ) : LawfulGrowthRate (bigO f) where
+  mem_dominating h hf := by
+    simp only [bigO, Asymptotics.isBigO_iff, Int.norm_natCast, Filter.eventually_atTop] at h hf ⊢
+    obtain ⟨a₁, hf₁⟩ := h
+    obtain ⟨c, a₂, hg⟩ := hf
+    refine ⟨c, max a₁ a₂, fun b hb ↦ ?_⟩
+    exact le_trans (mod_cast hf₁ b (le_of_max_le_left hb)) (hg b (le_of_max_le_right hb))
+  mem_add hf hg := hf.add hg
+
+instance instLawfulLittleO (f : ℕ → ℕ) : LawfulGrowthRate (littleO f) where
+  mem_dominating h hf := by
+    simp only [Filter.eventually_atTop, littleO, Asymptotics.isLittleO_iff, Int.norm_natCast] at h hf ⊢
+    intro c₀ hc₀
+    obtain ⟨a₁, hf₁⟩ := h
+    obtain ⟨a₂, hg⟩ := hf hc₀
+    refine ⟨max a₁ a₂, fun b hb ↦ ?_⟩
+    exact le_trans (mod_cast hf₁ b (le_of_max_le_left hb)) (hg b (le_of_max_le_right hb))
+  mem_add hf hg := hf.add hg
+
+instance : LawfulGrowthRate const := instLawfulBigO _
+
+instance : LawfulGrowthRate log := instLawfulBigO _
+
+instance : LawfulGrowthRate polylog where
+  mem_dominating h hf := by
+    sorry
+  mem_add hf hg := by
+    obtain ⟨a, ha⟩ := hf
+    obtain ⟨b, hb⟩ := hg
+    use a ⊔ b
+    refine (ha.trans ?_).add (hb.trans ?_)
+    all_goals (
+      rw [Asymptotics.isBigO_iff]
+      use 1
+      norm_num
+      use 2
+      intro _ hn
+      exact_mod_cast pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
+    )
+
+instance : LawfulGrowthRate sqrt := instLawfulBigO _
+
+instance : LawfulGrowthRate sublinear := instLawfulLittleO _
+
+instance : LawfulGrowthRate linear := instLawfulBigO _
+
+instance : LawfulGrowthRate linarithmic := instLawfulBigO _
+
+instance : LawfulGrowthRate quasilinear where
+  mem_dominating h hf := by
+    sorry
+  mem_add hf hg := by
+    sorry
+
+instance : LawfulGrowthRate poly where
+  mem_dominating h hf := by
+    sorry
+  mem_add hf hg := by
+    obtain ⟨a, ha⟩ := hf
+    obtain ⟨b, hb⟩ := hg
+    use a ⊔ b
+    refine' (ha.trans _ ).add (hb.trans _ )
+    all_goals (
+      rw [Asymptotics.isBigO_iff]
+      use 1
+      norm_num
+      use 1
+      intro _ hn
+      exact_mod_cast pow_le_pow_right₀ hn (by bound)
+    )
+
+instance : LawfulGrowthRate quasipoly where
+  mem_dominating h hf := by
+    sorry
+  mem_add hf hg := by
+    obtain ⟨a, ha⟩ := hf
+    obtain ⟨b, hb⟩ := hg
+    use a + b
+    sorry
+
+instance : LawfulGrowthRate two_pow := instLawfulBigO _
+
+instance : LawfulGrowthRate e_pow := instLawfulBigO _
+
+instance : LawfulGrowthRate exp where
+  mem_dominating h hf := by
+    sorry
+  mem_add hf hg := by
+    obtain ⟨a, ha⟩ := hf
+    obtain ⟨b, hb⟩ := hg
+    use a + b
+    sorry
+
+instance : LawfulGrowthRate primitiveRecursive where
+  mem_dominating h hf := by
+    sorry
+  mem_add hf hg := by
+    obtain ⟨a, ha⟩ := hf
+    obtain ⟨b, hb⟩ := hg
+    use a + b
+    sorry
+
+instance : LawfulGrowthRate computable where
+  mem_dominating h hf := by
+    sorry
+  mem_add hf hg := by
+    obtain ⟨a, ha⟩ := hf
+    obtain ⟨b, hb⟩ := hg
+    use a + b
+    sorry
+
+end lawful
 
 section real
 --Equivalent versions in terms of BigO real functions
@@ -298,19 +424,8 @@ theorem quasilinear_of_add (hf : f ∈ quasilinear) (hg : g ∈ quasilinear) : (
       pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
   )
 
-theorem poly_of_add (hf : f ∈ poly) (hg : g ∈ poly) : (f + g) ∈ poly := by
-  obtain ⟨a, ha⟩ := hf
-  obtain ⟨b, hb⟩ := hg
-  use a ⊔ b
-  refine' (ha.trans _ ).add (hb.trans _ )
-  all_goals (
-    rw [Asymptotics.isBigO_iff]
-    use 1
-    norm_num
-    use 1
-    intro _ hn
-    exact_mod_cast pow_le_pow_right₀ hn (by bound)
-  )
+theorem poly_of_add (hf : f ∈ poly) (hg : g ∈ poly) : (f + g) ∈ poly :=
+  LawfulGrowthRate.mem_add hf hg
 
 theorem quasipoly_of_add (hf : f ∈ quasipoly) (hg : g ∈ quasipoly) : (f + g) ∈ quasipoly := by
   obtain ⟨a, ha⟩ := hf
@@ -371,7 +486,7 @@ Proves goals of the form `f - g ∈ S`, where `S` is a `GrowthRate`.
 syntax (name := growthRate_sub) "growthRate_sub" : tactic
 macro_rules
   | `(tactic| growthRate_sub) => `(tactic| (
-    simp only [bigO, exp, polylog, sublinear, quasilinear, poly, quasipoly, primitiveRecursive, computable,
+    simp only [bigO, littleO, exp, polylog, quasilinear, poly, quasipoly, primitiveRecursive, computable,
       Asymptotics.isBigO_iff, Asymptotics.isLittleO_iff,
       Int.norm_natCast, Filter.eventually_atTop, Set.mem_setOf_eq] at *
     peel ‹_› with h
@@ -480,7 +595,7 @@ theorem quasipoly_mul (hf : f ∈ quasipoly) (hg : g ∈ quasipoly) : (f * g) �
   convert (ha.mul hb).trans ?_
   norm_num [Asymptotics.isBigO_iff, Norm.norm]
   use 2, 2, fun k hk => ?_
-  rw [← pow_succ', Nat.pow_add, abs_of_nonneg (by positivity), ← pow_add]
+  rw [← pow_succ', Nat.pow_add, ← pow_add]
   exact pow_le_pow_right₀ one_le_two ( by nlinarith [ pow_pos ( show Nat.log 2 k > 0 from Nat.log_pos ( by norm_num ) hk ) a, pow_pos ( show Nat.log 2 k > 0 from Nat.log_pos ( by norm_num ) hk ) b ] );
 
 theorem two_pow_mul_const (hf : f ∈ two_pow) (hg : g ∈ const) : (f * g) ∈ two_pow := by
@@ -520,24 +635,25 @@ theorem e_pow_of_two_pow_mul_quasipoly (hf : f ∈ two_pow) (hg : g ∈ quasipol
     exact ⟨ h_exp_log.choose, fun n hn => by simpa only [ pow_add, mul_assoc ] using le_trans ( h_exp_log.choose_spec n hn ) ( Nat.le_ceil _ ) ⟩;
   -- By dividing both sides of the inequality by $2^b$, we reduce it to showing that $c₂ * 2 ^ ((log2 b) ^ C) ≤ \exp(b - b \cdot \log_2(e))$.
   suffices h₂ : ∃ k : ℕ, ∀ b ≥ k, (c₂ * 2 ^ ((Nat.log 2 b) ^ C)) ≤ (Real.exp (b * (1 - Real.log 2))) by
-    cases' h₂ with k hk;
+    rcases h₂ with ⟨k, hk⟩
     use k; intro b hb; rw [ pow_add ] ; rw [ ← mul_comm ] ; specialize hk b hb; convert mul_le_mul_of_nonneg_left hk <| pow_nonneg zero_le_two b using 1 ;
     · ring
     · rw [ mul_sub, mul_one, Real.exp_sub ];
       norm_num [ Real.exp_neg, Real.exp_nat_mul, Real.exp_log, mul_div_cancel₀ ];
   -- We'll use that exponential functions grow faster than polynomial functions. Specifically, we'll find a $k$ such that for all $b \geq k$, $2^{(\log_2(b))^C}$ is dominated by $e^{b (1 - \log(2))}$.
   suffices h_exp_poly : Filter.Tendsto (fun b : ℕ => (2 ^ ((Nat.log 2 b) ^ C) : ℝ) / Real.exp (b * (1 - Real.log 2))) Filter.atTop (nhds 0) by
-    have := h_exp_poly.eventually ( gt_mem_nhds <| show 0 < c₂⁻¹ by positivity ) ; aesop;
-    exact ⟨ _, fun n hn => by
-      have := h n hn
-      rw [ div_lt_iff₀ ( Real.exp_pos _ ) ] at this
-      nlinarith [ Real.exp_pos ( n * ( 1 - Real.log 2 ) ), inv_mul_cancel₀ ( ne_of_gt hc₂ ) ] ⟩;
+    have := h_exp_poly.eventually ( gt_mem_nhds <| show 0 < c₂⁻¹ by positivity )
+    rw [Filter.eventually_atTop] at this
+    peel this with _ n _ this
+    rw [ div_lt_iff₀ ( Real.exp_pos _ ) ] at this
+    nlinarith [ Real.exp_pos ( n * ( 1 - Real.log 2 ) ), inv_mul_cancel₀ ( ne_of_gt hc₂ ) ]
   -- Let $y = \log_2(b)$, therefore the expression becomes $\lim_{y \to \infty} \frac{2^{y^C}}{e^{2^y (1 - \log(2))}}$.
   suffices h_log : Filter.Tendsto (fun y : ℕ => (2 ^ (y ^ C) : ℝ) / Real.exp (2 ^ y * (1 - Real.log 2))) Filter.atTop (nhds 0) by
     refine' squeeze_zero_norm' _ ( h_log.comp ( _ ) );
     case refine'_2 => use fun x => Nat.log 2 x;
     -- Case 1
-    · aesop;
+    · simp only [norm_div, norm_pow, Real.norm_ofNat, Real.norm_eq_abs, Real.abs_exp, Function.comp_apply,
+        Filter.eventually_atTop, ge_iff_le]
       refine' ⟨ 4, fun n hn => _ ⟩;
       gcongr;
       -- Case 1
@@ -637,8 +753,8 @@ theorem const_ssubset_log : const ⊂ log := by
   constructor
   · norm_num [ Filter.IsBoundedUnder, Filter.IsBounded ];
     intro x n;
-    cases' exists_nat_gt x with k hk;
-    exact ⟨ 2 ^ ( n + k + 1 ), by linarith [ @Nat.lt_two_pow_self ( n + k + 1 ) ], by rw [ Nat.log_pow ( by norm_num ) ] ; push_cast; linarith ⟩
+    rcases exists_nat_gt x with ⟨k, hk⟩
+    exact ⟨ 2 ^ ( n + k + 1 ), by linarith [( n + k + 1 ).lt_two_pow_self], by rw [ Nat.log_pow ( by norm_num ) ] ; push_cast; linarith ⟩
   · apply Asymptotics.isBigO_refl
 
 theorem log_ssubset_polylog : log ⊂ polylog := by
@@ -648,15 +764,14 @@ theorem log_ssubset_polylog : log ⊂ polylog := by
     use 1
     simp_rw [pow_one]
     convert h
-  · simp only [bigO, Set.setOf_subset_setOf, forall_exists_index, not_forall,
-      Classical.not_imp, exists_and_right]
+  · simp only [bigO, Set.setOf_subset_setOf, forall_exists_index, not_forall]
     use fun n ↦ (Nat.log 2 n) ^ 2, 2, Asymptotics.isBigO_refl ..
     norm_num [Asymptotics.isBigO_iff]
     intro x y
     obtain ⟨n, hn⟩ := exists_nat_gt x
     use 2 ^ (y + n + 1)
     constructor
-    · linarith [@Nat.lt_two_pow_self (y + n + 1)]
+    · linarith [(y + n + 1).lt_two_pow_self]
     · norm_num [Nat.log_pow]
       nlinarith
 
@@ -675,7 +790,7 @@ theorem polylog_subset_sqrt : polylog ⊆ sqrt := by
     gcongr;
     have : Nat.log 2 x ≤ Real.logb 2 ( x:ℝ ) := by
       rw [ Real.le_logb_iff_rpow_le ( by norm_num ) ( by norm_cast; linarith ) ] ; norm_cast;
-      rw [ Nat.pow_le_iff_le_log ] <;> linarith;
+      rw [ ← Nat.le_log_iff_pow_le ] <;> linarith;
     exact this
   -- Show that $ c * \log^k x \leq \sqrt{x} $ for all sufficiently large $ x $.
   obtain ⟨ M, hM ⟩ : ∃ M, ∀ x ≥ M, c * Real.logb 2 x ^ k ≤ Real.sqrt x := by
@@ -731,8 +846,54 @@ theorem polylog_subset_sqrt : polylog ⊆ sqrt := by
 
 theorem polylog_ssubset_sqrt : polylog ⊂ sqrt := by
   use polylog_subset_sqrt
-  simp only [polylog, sqrt, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset]
-  sorry
+  simp only [polylog, sqrt, bigO, Set.setOf_subset_setOf]
+  push_neg
+  use Nat.sqrt, Asymptotics.isBigO_refl ..
+  intro C
+  apply Asymptotics.IsLittleO.not_isBigO
+  · rw [ Asymptotics.isLittleO_iff ];
+    intro c a
+    simp_all only [Nat.cast_pow, norm_pow, norm_natCast, Filter.eventually_atTop, ge_iff_le]
+    norm_num [ Norm.norm ];
+    -- We'll use that logarithmic base 2 grows slower than any polynomial function, so that for large $n$, $\log_2(n)^C$ is much smaller than $n^{1/2}$.
+    have h_log_growth : Filter.Tendsto (fun n : ℕ => (Nat.log 2 n : ℝ) ^ C / Real.sqrt n) Filter.atTop (nhds 0) := by
+      -- We'll use that logarithmic base 2 grows slower than any polynomial function under the real numbers, so that for large $n$, $(\log_2(n))^C$ is much smaller than $\sqrt{n}$.
+      have h_log_growth : Filter.Tendsto (fun x : ℝ => (Real.log x / Real.log 2) ^ C / Real.sqrt x) Filter.atTop (nhds 0) := by
+        -- Let $y = \log_2(x)$. Then we can rewrite our limit in terms of $y$:
+        suffices h_log_growth_y : Filter.Tendsto (fun y : ℝ => y ^ C / Real.sqrt (2 ^ y)) Filter.atTop (nhds 0) by
+          have := h_log_growth_y.comp ( Real.tendsto_log_atTop.const_mul_atTop ( by positivity : ( 0 : ℝ ) < ( Real.log 2 ) ⁻¹ ) );
+          refine this.congr' ?_;
+          filter_upwards [ Filter.eventually_gt_atTop 0 ] with x hx;
+          -- By simplifying, we can see that the two functions are equal.
+          field_simp [hx];
+          sorry
+        -- Notice that $\sqrt{2^y} = 2^{y/2}$, so we can rewrite the limit as $\lim_{y \to \infty} \frac{y^C}{2^{y/2}}$.
+        suffices h_log_growth_y_simplified : Filter.Tendsto (fun y : ℝ => y ^ C / Real.exp (y * Real.log 2 / 2)) Filter.atTop (nhds 0) by
+          convert h_log_growth_y_simplified using 2 ; norm_num [ Real.sqrt_eq_rpow, Real.rpow_def_of_pos ] ;
+          ring_nf
+          rw [ ← Real.exp_mul ];
+        -- Let $z = \frac{y \log 2}{2}$, so we can rewrite the limit as $\lim_{z \to \infty} \frac{(\frac{2z}{\log 2})^C}{e^z}$.
+        suffices h_log_growth_z : Filter.Tendsto (fun z : ℝ => ((2 * z) / Real.log 2) ^ C / Real.exp z) Filter.atTop (nhds 0) by
+          have h_log_growth_z : Filter.Tendsto (fun y : ℝ => ((2 * (y * Real.log 2 / 2)) / Real.log 2) ^ C / Real.exp (y * Real.log 2 / 2)) Filter.atTop (nhds 0) := by
+            exact h_log_growth_z.comp ( Filter.Tendsto.atTop_mul_const ( by positivity ) <| Filter.tendsto_id.atTop_mul_const <| by positivity );
+          convert h_log_growth_z using 3 ;
+          ring_nf
+          norm_num
+        -- Now consider the term $(\frac{2z}{\log 2})^C / e^z$. We want to show that this goes to $0$ as $z \to \infty$.
+        suffices h_term : Filter.Tendsto (fun z : ℝ => z ^ C / Real.exp z) Filter.atTop (nhds 0) by
+          convert h_term.const_mul ( ( Real.log 2 ) ⁻¹ ^ C * 2 ^ C ) using 2 <;> ring;
+        simpa [ Real.exp_neg ] using Real.tendsto_pow_mul_exp_neg_atTop_nhds_zero C;
+      refine' squeeze_zero_norm' _ ( h_log_growth.comp tendsto_natCast_atTop_atTop );
+      refine' Filter.eventually_atTop.mpr ⟨ 2, fun n hn => _ ⟩ ; rw [ Function.comp_apply, Real.norm_of_nonneg ( by positivity ) ] ; gcongr;
+      rw [ le_div_iff₀ ( Real.log_pos one_lt_two ), ← Real.log_rpow zero_lt_two ] ; exact Real.log_le_log ( by positivity ) <| by norm_cast ; exact Nat.pow_log_le_self _ <| by positivity;
+    have this := h_log_growth.eventually ( gt_mem_nhds <| show 0 < c / 2 by positivity ) ; aesop;
+    refine' ⟨ w + 4, fun n hn ↦ _ ⟩;
+    replace := h n ( by linarith );
+    rw [ div_lt_iff₀ ( by norm_num; linarith ) ] at this;
+    refine le_trans ( le_of_lt this ) ?_;
+    nlinarith only [ show ( Nat.sqrt n:ℝ ) ≥ 1 by exact Nat.one_le_cast.2 ( Nat.sqrt_pos.2 ( by linarith ) ), show ( Real.sqrt n:ℝ ) ≤ Nat.sqrt n + 1 by exact Real.sqrt_le_iff.2 ⟨ by positivity, by norm_cast; nlinarith [ Nat.lt_succ_sqrt n ] ⟩, a ]
+  · rw [Filter.frequently_atTop]
+    exact (⟨· + 2, by simp⟩)
 
 theorem sqrt_subset_sublinear : sqrt ⊆ sublinear := by
   simp [sqrt, sublinear, bigO]
@@ -745,15 +906,16 @@ theorem sqrt_subset_sublinear : sqrt ⊆ sublinear := by
   intro b hb;
   have : (1 : ℝ) / c ≤ Real.sqrt b := (Real.le_sqrt_of_sq_le <| by simpa using hb );
   rw [ div_le_iff₀ ( by positivity ) ] at this;
+  simp
   nlinarith [ show ( Nat.sqrt b :ℝ ) ≤ Real.sqrt ↑b by exact Real.le_sqrt_of_sq_le <| mod_cast Nat.sqrt_le' b, Real.sq_sqrt <| Nat.cast_nonneg b ]
 
 theorem sqrt_ssubset_sublinear : sqrt ⊂ sublinear := by
   use sqrt_subset_sublinear
-  simp only [sqrt, sublinear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset]
+  simp only [sqrt, sublinear, bigO]
   sorry
 
 theorem sublinear_ssubset_linear : sublinear ⊂ linear := by
-  simp only [sublinear, linear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset]
+  simp only [littleO, linear, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset]
   push_neg
   use fun _ ↦ Asymptotics.IsLittleO.isBigO, id, Asymptotics.isBigO_refl ..
   apply Asymptotics.isLittleO_irrefl'
@@ -781,7 +943,7 @@ theorem linear_ssubset_linarithmic : linear ⊂ linarithmic := by
   use 2 ^ (k + n)
   norm_num [Nat.log_pow]
   constructor
-  · linarith [@Nat.lt_two_pow_self (k + n)]
+  · linarith [(k + n).lt_two_pow_self]
   · nlinarith [abs_lt.mp (show |x| < n by linarith), show 0 < (2:ℝ) ^ (k + n) by positivity ]
 
 theorem linarithmic_subset_quasilinear : linarithmic ⊆ quasilinear :=
@@ -802,11 +964,26 @@ theorem linarithmic_ssubset_quasilinear : linarithmic ⊂ quasilinear := by
     nlinarith [(by positivity : 0 < (2 : ℝ) ^ (y + n + 1) * (y + n + 1))]
 
 theorem quasilinear_subset_poly : quasilinear ⊆ poly := by
-  sorry
+  simp [quasilinear, poly]
+  intro f C h
+  use C + 1
+  apply h.trans
+  norm_num [ Asymptotics.isBigO_iff ];
+  refine' ⟨ 1, 2, fun n hn => _ ⟩ ; norm_num;
+  -- We can cancel $n$ since it is positive and simplify the inequality to $\log_2(n)^C \leq n^C$.
+  suffices h_cancel : (Nat.log 2 n : ℝ) ^ C ≤ (n : ℝ) ^ C by
+    simpa [ pow_succ' ] using mul_le_mul_of_nonneg_left h_cancel <| Nat.cast_nonneg _;
+  gcongr
+  exact (Nat.log_lt_of_lt_pow (by linarith) (by linarith [n.lt_two_pow_self])).le
 
 theorem quasilinear_ssubset_poly : quasilinear ⊂ poly := by
   use quasilinear_subset_poly
-  sorry
+  simp only [quasilinear, poly, Set.setOf_subset_setOf, not_forall, exists_prop]
+  use (· ^ 2)
+  constructor
+  · use 2
+    simpa using Asymptotics.isBigO_refl _ _
+  · sorry
 
 theorem poly_subset_quasipoly : poly ⊆ quasipoly := by
   refine fun f ⟨c, hf⟩ ↦ ⟨c + 1, hf.trans ?_⟩
@@ -839,12 +1016,29 @@ theorem poly_subset_quasipoly : poly ⊆ quasipoly := by
 
 theorem poly_ssubset_quasipoly : poly ⊂ quasipoly := by
   use poly_subset_quasipoly
+  simp [poly, quasipoly]
+  use fun n ↦ 2 ^ (Nat.log 2 n) ^ 2
+  constructor
+  · use 2
+    exact_mod_cast Asymptotics.isBigO_refl ..
+  · sorry
+
+theorem quasipoly_subset_two_pow : quasipoly ⊆ two_pow := by
   sorry
 
 theorem quasipoly_ssubset_two_pow : quasipoly ⊂ two_pow := by
+  use quasipoly_subset_two_pow
+  simp only [quasipoly, bigO, two_pow, Nat.cast_pow, Nat.cast_ofNat, Set.setOf_subset_setOf, not_forall, exists_prop]
+  use (2 ^ ·), mod_cast Asymptotics.isBigO_refl ..
+  sorry
+
+theorem two_pow_subset_e_pow : two_pow ⊆ e_pow := by
   sorry
 
 theorem two_pow_ssubset_e_pow : two_pow ⊂ e_pow := by
+  use two_pow_subset_e_pow
+  simp only [e_pow, bigO, two_pow, Nat.cast_pow, Nat.cast_ofNat, Set.setOf_subset_setOf, not_forall, exists_prop]
+  use (⌈Real.exp ·⌉₊), Asymptotics.isBigO_refl ..
   sorry
 
 theorem e_pow_subset_exp : e_pow ⊆ exp := by
@@ -929,11 +1123,17 @@ theorem primitiveRecursive_ssubset_computable : primitiveRecursive ⊂ computabl
   use primitiveRecursive_subset_computable
   rw [Set.not_subset]
   use (fun x ↦ ack x x)
-  simp [primitiveRecursive, exp, bigO]
+  simp [primitiveRecursive, bigO]
   constructor
-  · --have := computable₂_ack --BUMP mathlib
+  · use (fun x ↦ ack x x)
+    have h := computable₂_ack
+    constructor
+    · sorry
+    · exact Asymptotics.isBigO_refl ..
+  · intro x hx
+    have h := not_nat_primrec_ack_self
+    have h2 := @exists_lt_ack_of_nat_primrec
     sorry
-  · sorry
 
 end ordering
 
