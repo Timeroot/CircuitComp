@@ -153,6 +153,24 @@ def computable : GrowthRate :=
 
 end defs
 
+section bigO
+
+theorem bigO_add {f g a b: ℕ → ℕ} (hf : f ∈ bigO a) (hg : g ∈ bigO b) : f + g ∈ bigO (a + b) := by
+  rw [bigO, Set.mem_setOf_eq, Asymptotics.isBigO_iff]
+  obtain ⟨x, hx₁, hx₂⟩ := hf.exists_pos
+  obtain ⟨y, hy₁, hy₂⟩ := hg.exists_pos
+  simp only [Pi.add_apply, Nat.cast_add, Filter.eventually_atTop]
+  rw [ Asymptotics.IsBigOWith ] at hx₂ hy₂
+  simp_all only [gt_iff_lt, Int.norm_natCast, Filter.eventually_atTop, ge_iff_le]
+  obtain ⟨w, h⟩ := hx₂
+  obtain ⟨w_1, h_1⟩ := hy₂
+  norm_num [Norm.norm]
+  exact ⟨x ⊔ y, w ⊔ w_1, fun k hk => by
+    rw [ abs_of_nonneg ( by positivity : ( f k : ℝ ) + g k ≥ 0 ), abs_of_nonneg ( by positivity : ( a k + b k : ℝ ) ≥ 0 ) ]
+    nlinarith [ h k ( le_of_max_le_left hk ), h_1 k ( le_of_max_le_right hk ), le_max_left x y, le_max_right x y ] ⟩
+
+end bigO
+
 section lawful
 
 /-- We call a `GrowthRate` *lawful* if it is closed under dominating sequences
@@ -193,8 +211,8 @@ instance : LawfulGrowthRate polylog where
   mem_add hf hg := by
     obtain ⟨a, ha⟩ := hf
     obtain ⟨b, hb⟩ := hg
-    use a ⊔ b
-    refine (ha.trans ?_).add (hb.trans ?_)
+    use a + b
+    refine Asymptotics.IsBigO.add (ha.trans ?_) (hb.trans ?_)
     all_goals (
       rw [Asymptotics.isBigO_iff]
       use 1
@@ -216,16 +234,33 @@ instance : LawfulGrowthRate quasilinear where
   mem_dominating h hf := by
     sorry
   mem_add hf hg := by
-    sorry
+    obtain ⟨a, ha⟩ := hf
+    obtain ⟨b, hb⟩ := hg
+    use a + b
+    refine Asymptotics.IsBigO.add (ha.trans ?_) (hb.trans ?_)
+    all_goals (
+      rw [Asymptotics.isBigO_iff]
+      use 1
+      norm_num
+      use 2
+      intro _ hn
+      exact_mod_cast Nat.mul_le_mul_left _ <|
+        pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
+    )
 
 instance : LawfulGrowthRate poly where
   mem_dominating h hf := by
-    sorry
+    simp_rw [poly, Set.mem_setOf, Asymptotics.isBigO_iff] at hf ⊢
+    obtain ⟨p, c, hf⟩ := hf
+    use p, c
+    filter_upwards [h, hf] with a h ha
+    simp at ha ⊢
+    exact le_trans (mod_cast h) ha
   mem_add hf hg := by
     obtain ⟨a, ha⟩ := hf
     obtain ⟨b, hb⟩ := hg
-    use a ⊔ b
-    refine' (ha.trans _ ).add (hb.trans _ )
+    use a + b
+    refine Asymptotics.IsBigO.add (ha.trans ?_) (hb.trans ?_)
     all_goals (
       rw [Asymptotics.isBigO_iff]
       use 1
@@ -242,7 +277,16 @@ instance : LawfulGrowthRate quasipoly where
     obtain ⟨a, ha⟩ := hf
     obtain ⟨b, hb⟩ := hg
     use a + b
-    sorry
+    refine Asymptotics.IsBigO.add (ha.trans ?_) (hb.trans ?_)
+    all_goals (
+      rw [Asymptotics.isBigO_iff]
+      use 1
+      norm_num [Int.norm_eq_abs]
+      use 2
+      intro _ hn
+      exact_mod_cast pow_le_pow_right₀ one_le_two <|
+        pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
+    )
 
 instance : LawfulGrowthRate two_pow := instLawfulBigO _
 
@@ -255,25 +299,32 @@ instance : LawfulGrowthRate exp where
     obtain ⟨a, ha⟩ := hf
     obtain ⟨b, hb⟩ := hg
     use a + b
-    sorry
+    refine Asymptotics.IsBigO.add (ha.trans ?_) (hb.trans ?_)
+    all_goals (
+      rw [Asymptotics.isBigO_iff]
+      use 1
+      norm_num [Int.norm_eq_abs]
+      use 2
+      intros
+      exact pow_le_pow_left₀ (by positivity) (by rw [abs_of_nonneg (by positivity)]; bound) _
+    )
 
 instance : LawfulGrowthRate primitiveRecursive where
   mem_dominating h hf := by
     sorry
   mem_add hf hg := by
-    obtain ⟨a, ha⟩ := hf
-    obtain ⟨b, hb⟩ := hg
-    use a + b
-    sorry
+    obtain ⟨a, ha₁, ha₂⟩ := hf
+    obtain ⟨b, hb₁, hb₂⟩ := hg
+    simp_rw [primitiveRecursive, ← Primrec.nat_iff] at *
+    exact ⟨_, Primrec.nat_add.comp ha₁ hb₁, bigO_add ha₂ hb₂⟩
 
 instance : LawfulGrowthRate computable where
   mem_dominating h hf := by
     sorry
   mem_add hf hg := by
-    obtain ⟨a, ha⟩ := hf
-    obtain ⟨b, hb⟩ := hg
-    use a + b
-    sorry
+    obtain ⟨a, ha₁, ha₂⟩ := hf
+    obtain ⟨b, hb₁, hb₂⟩ := hg
+    exact ⟨_, Primrec.nat_add.to_comp.comp ha₁ hb₁, bigO_add ha₂ hb₂⟩
 
 end lawful
 
@@ -343,195 +394,27 @@ section closure
 
 variable {f g : ℕ → ℕ}
 
-/-
-const       := bigO 1
-log         := bigO (Nat.log 2)
-polylog     := setOf ...
-sqrt        := bigO Nat.sqrt
-sublinear   := setOf ...
-linear      := bigO id
-linarithmic := bigO (fun n ↦ n * Nat.log 2 n)
-quasilinear := setOf ...
-poly        := setOf ...
-quasipoly   := setOf ...
-two_pow     := bigO (2 ^ ·)
-e_pow       := bigO (⌈Real.exp ·⌉₊)
-exp         := setOf ...
-primitiveRecursive := setOf ...
-computable := setOf ...
--/
+theorem add {S : GrowthRate} [LawfulGrowthRate S] (hf : f ∈ S) (hg : g ∈ S) : (f + g) ∈ S := by
+  apply LawfulGrowthRate.mem_add hf hg
 
-section add
+theorem sub {S : GrowthRate} [LawfulGrowthRate S] (hf : f ∈ S) (g) : (f - g) ∈ S := by
+  apply LawfulGrowthRate.mem_dominating _ hf
+  rw [Filter.eventually_atTop]
+  exact ⟨0, fun _ _ ↦ (Nat.cast_le.mpr <| Nat.sub_le ..)⟩
 
-theorem bigO_add {f g a b: ℕ → ℕ} (hf : f ∈ bigO a) (hg : g ∈ bigO b) : f + g ∈ bigO (a + b) := by
-  rw [bigO, Set.mem_setOf_eq, Asymptotics.isBigO_iff]
-  obtain ⟨x, hx₁, hx₂⟩ := hf.exists_pos
-  obtain ⟨y, hy₁, hy₂⟩ := hg.exists_pos
-  simp only [Pi.add_apply, Nat.cast_add, Filter.eventually_atTop]
-  rw [ Asymptotics.IsBigOWith ] at hx₂ hy₂
-  simp_all only [gt_iff_lt, Int.norm_natCast, Filter.eventually_atTop, ge_iff_le]
-  obtain ⟨w, h⟩ := hx₂
-  obtain ⟨w_1, h_1⟩ := hy₂
-  norm_num [ Norm.norm ] at *;
-  exact ⟨x ⊔ y, w ⊔ w_1, fun k hk => by
-    rw [ abs_of_nonneg ( by positivity : ( f k : ℝ ) + g k ≥ 0 ), abs_of_nonneg ( by positivity : ( a k + b k : ℝ ) ≥ 0 ) ]
-    nlinarith [ h k ( le_of_max_le_left hk ), h_1 k ( le_of_max_le_right hk ), le_max_left x y, le_max_right x y ] ⟩
-
-theorem const_of_add (hf : f ∈ const) (hg : g ∈ const) : (f + g) ∈ const :=
-  hf.add hg
-
-theorem log_of_add (hf : f ∈ log) (hg : g ∈ log) : (f + g) ∈ log :=
-  hf.add hg
-
-theorem polylog_of_add (hf : f ∈ polylog) (hg : g ∈ polylog) : (f + g) ∈ polylog := by
-  obtain ⟨a, ha⟩ := hf
-  obtain ⟨b, hb⟩ := hg
-  use Max.max a b
-  refine' (ha.trans _ ).add (hb.trans _ )
-  all_goals (
-    rw [Asymptotics.isBigO_iff]
-    use 1
-    norm_num
-    use 2
-    intro _ hn
-    exact_mod_cast pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
-  )
-
-theorem sqrt_of_add (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f + g) ∈ sqrt :=
-  hf.add hg
-
-theorem sublinear_of_add (hf : f ∈ sublinear) (hg : g ∈ sublinear) : (f + g) ∈ sublinear :=
-  hf.add hg
-
-theorem linear_of_add (hf : f ∈ linear) (hg : g ∈ linear) : (f + g) ∈ linear :=
-  hf.add hg
-
-theorem linarithmic_of_add (hf : f ∈ linarithmic) (hg : g ∈ linarithmic) : (f + g) ∈ linarithmic :=
-  hf.add hg
-
-theorem quasilinear_of_add (hf : f ∈ quasilinear) (hg : g ∈ quasilinear) : (f + g) ∈ quasilinear := by
-  obtain ⟨a, ha⟩ := hf
-  obtain ⟨b, hb⟩ := hg
-  use a ⊔ b
-  refine' ( Asymptotics.IsBigO.add ( ha.trans ( _ ) ) ( hb.trans ( _ ) ) )
-  all_goals ( --TODO: gcongr?
-    rw [Asymptotics.isBigO_iff]
-    use 1
-    norm_num
-    use 2
-    intro _ hn
-    exact_mod_cast Nat.mul_le_mul_left _ <|
-      pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
-  )
-
-theorem poly_of_add (hf : f ∈ poly) (hg : g ∈ poly) : (f + g) ∈ poly :=
-  LawfulGrowthRate.mem_add hf hg
-
-theorem quasipoly_of_add (hf : f ∈ quasipoly) (hg : g ∈ quasipoly) : (f + g) ∈ quasipoly := by
-  obtain ⟨a, ha⟩ := hf
-  obtain ⟨b, hb⟩ := hg
-  use a ⊔ b
-  refine' (ha.trans _ ).add (hb.trans _ )
-  all_goals (
-    rw [Asymptotics.isBigO_iff]
-    use 1
-    norm_num [Int.norm_eq_abs]
-    use 2
-    intro _ hn
-    exact_mod_cast pow_le_pow_right₀ one_le_two <|
-      pow_le_pow_right₀ (Nat.le_log_of_pow_le one_lt_two hn) (by bound)
-  )
-
-theorem two_pow_of_add (hf : f ∈ two_pow) (hg : g ∈ two_pow) : (f + g) ∈ two_pow :=
-  hf.add hg
-
-theorem e_pow_of_add (hf : f ∈ e_pow) (hg : g ∈ e_pow) : (f + g) ∈ e_pow :=
-  hf.add hg
-
-theorem exp_of_add (hf : f ∈ exp) (hg : g ∈ exp) : (f + g) ∈ exp := by
-  obtain ⟨a, ha⟩ := hf
-  obtain ⟨b, hb⟩ := hg
-  use a ⊔ b
-  refine' (ha.trans _ ).add (hb.trans _ )
-  all_goals (
-    rw [Asymptotics.isBigO_iff]
-    use 1
-    norm_num [Int.norm_eq_abs]
-    use 2
-    intros
-    exact pow_le_pow_left₀ (by positivity) (by rw [abs_of_nonneg (by positivity)]; bound) _
-  )
-
-theorem primitiveRecursive_of_add (hf : f ∈ primitiveRecursive) (hg : g ∈ primitiveRecursive) :
-    (f + g) ∈ primitiveRecursive := by
-  obtain ⟨a, ha₁, ha₂⟩ := hf
-  obtain ⟨b, hb₁, hb₂⟩ := hg
-  simp_rw [primitiveRecursive, ← Primrec.nat_iff] at *
-  exact ⟨_, Primrec.nat_add.comp ha₁ hb₁, bigO_add ha₂ hb₂⟩
-
-theorem computable_of_add (hf : f ∈ computable) (hg : g ∈ computable) :
-    (f + g) ∈ computable := by
-  obtain ⟨a, ha₁, ha₂⟩ := hf
-  obtain ⟨b, hb₁, hb₂⟩ := hg
-  exact ⟨_, Primrec.nat_add.to_comp.comp ha₁ hb₁, bigO_add ha₂ hb₂⟩
-
-end add
-section sub
-
-variable (g)
-
-/--
-Proves goals of the form `f - g ∈ S`, where `S` is a `GrowthRate`.
--/
-syntax (name := growthRate_sub) "growthRate_sub" : tactic
-macro_rules
-  | `(tactic| growthRate_sub) => `(tactic| (
-    simp only [bigO, littleO, exp, polylog, quasilinear, poly, quasipoly, primitiveRecursive, computable,
-      Asymptotics.isBigO_iff, Asymptotics.isLittleO_iff,
-      Int.norm_natCast, Filter.eventually_atTop, Set.mem_setOf_eq] at *
-    peel ‹_› with h
-    exact (Nat.cast_le.mpr <| Nat.sub_le ..).trans h))
-
-theorem const_of_sub (hf : f ∈ const) : (f - g) ∈ const := by growthRate_sub
-
-theorem log_of_sub (hf : f ∈ log) : (f - g) ∈ log := by growthRate_sub
-
-theorem polylog_of_sub (hf : f ∈ polylog) : (f - g) ∈ polylog := by growthRate_sub
-
-theorem sqrt_of_sub (hf : f ∈ sqrt) : (f - g) ∈ sqrt := by growthRate_sub
-
-theorem sublinear_of_sub (hf : f ∈ sublinear) : (f - g) ∈ sublinear := by growthRate_sub
-
-theorem linear_of_sub (hf : f ∈ linear) : (f - g) ∈ linear := by growthRate_sub
-
-theorem linarithmic_of_sub (hf : f ∈ linarithmic) : (f - g) ∈ linarithmic := by growthRate_sub
-
-theorem quasilinear_of_sub (hf : f ∈ quasilinear) : (f - g) ∈ quasilinear := by growthRate_sub
-
-theorem poly_of_sub (hf : f ∈ poly) : (f - g) ∈ poly := by growthRate_sub
-
-theorem quasipoly_of_sub (hf : f ∈ quasipoly) : (f - g) ∈ quasipoly := by growthRate_sub
-
-theorem two_pow_of_sub (hf : f ∈ two_pow) : (f - g) ∈ two_pow := by growthRate_sub
-
-theorem e_pow_of_sub (hf : f ∈ e_pow) : (f - g) ∈ e_pow := by growthRate_sub
-
-theorem exp_of_sub (hf : f ∈ exp) : (f - g) ∈ exp := by growthRate_sub
-
-theorem primitiveRecursive_of_sub (hf : f ∈ primitiveRecursive) : (f - g) ∈ primitiveRecursive := by growthRate_sub
-
-theorem computable_of_sub (hf : f ∈ computable) : (f - g) ∈ computable := by growthRate_sub
-
-end sub
 section mul
 
-theorem const_mul (hf : f ∈ const) (hg : g ∈ const) : (f * g) ∈ const :=
-  hf.mul hg
+theorem mul_const {S : GrowthRate} [LawfulGrowthRate S] (hf : f ∈ S) (hg : g ∈ const) : (f * g) ∈ S := by
+  have h_add {f₁ f₂} : _ := @GrowthRate.add f₁ f₂ (S := S) _
+  sorry
 
+theorem const_mul (hf : f ∈ const) (hg : g ∈ const) : (f * g) ∈ const := by
+  rw [mul_comm]
+  exact mul_const hg hf
+
+--Remove
 theorem log_mul_const (hf : f ∈ log) (hg : g ∈ const) : (f * g) ∈ log := by
-  convert hf.mul hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+  exact mul_const hf hg
 
 theorem polylog_mul (hf : f ∈ polylog) (hg : g ∈ polylog) : (f * g) ∈ polylog := by
   obtain ⟨a, ha⟩ := hf
@@ -540,20 +423,17 @@ theorem polylog_mul (hf : f ∈ polylog) (hg : g ∈ polylog) : (f * g) ∈ poly
   convert ha.mul hb
   simp [pow_add]
 
+--Remove
 theorem sqrt_mul_const (hf : f ∈ sqrt) (hg : g ∈ const) : (f * g) ∈ sqrt := by
-  convert hf.mul hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+  exact mul_const hf hg
 
+--Remove
 theorem sublinear_mul_const (hf : f ∈ sublinear) (hg : g ∈ const) : (f * g) ∈ sublinear := by
-  convert hf.mul_isBigO hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+  exact mul_const hf hg
 
+--Remove
 theorem linear_mul_const (hf : f ∈ linear) (hg : g ∈ const) : (f * g) ∈ linear := by
-  convert hf.mul hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+  exact mul_const hf hg
 
 theorem linear_of_sqrt_mul_sqrt (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f * g) ∈ linear := by
   convert (hf.mul hg).trans ?_
@@ -562,15 +442,12 @@ theorem linear_of_sqrt_mul_sqrt (hf : f ∈ sqrt) (hg : g ∈ sqrt) : (f * g) �
   exact ⟨ 1, by norm_num, 0, fun b hb => by
     norm_cast; nlinarith [ Nat.sqrt_le b ] ⟩
 
+--Remove
 theorem linarithmic_mul_const (hf : f ∈ linarithmic) (hg : g ∈ const) : (f * g) ∈ linarithmic := by
-  convert hf.mul hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+  exact mul_const hf hg
 
-theorem linarithmic_of_linear_mul_log (hf : f ∈ linarithmic) (hg : g ∈ const) : (f * g) ∈ linarithmic := by
-  convert hf.mul hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+theorem linarithmic_of_linear_mul_log (hf : f ∈ linear) (hg : g ∈ log) : (f * g) ∈ linarithmic := by
+  sorry
 
 theorem quasilinear_mul_polylog (hf : f ∈ quasilinear) (hg : g ∈ polylog) : (f * g) ∈ quasilinear := by
   obtain ⟨a, ha⟩ := hf
@@ -598,15 +475,13 @@ theorem quasipoly_mul (hf : f ∈ quasipoly) (hg : g ∈ quasipoly) : (f * g) �
   rw [← pow_succ', Nat.pow_add, ← pow_add]
   exact pow_le_pow_right₀ one_le_two ( by nlinarith [ pow_pos ( show Nat.log 2 k > 0 from Nat.log_pos ( by norm_num ) hk ) a, pow_pos ( show Nat.log 2 k > 0 from Nat.log_pos ( by norm_num ) hk ) b ] );
 
+--Remove
 theorem two_pow_mul_const (hf : f ∈ two_pow) (hg : g ∈ const) : (f * g) ∈ two_pow := by
-  convert hf.mul hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+  exact mul_const hf hg
 
+--Remove
 theorem e_pow_mul_const (hf : f ∈ e_pow) (hg : g ∈ const) : (f * g) ∈ e_pow := by
-  convert hf.mul hg
-  simp only [Pi.one_apply, Nat.cast_one, mul_one]
-  rfl
+  exact mul_const hf hg
 
 theorem e_pow_of_two_pow_mul_quasipoly (hf : f ∈ two_pow) (hg : g ∈ quasipoly) : (f * g) ∈ e_pow := by
   simp [e_pow, bigO, two_pow, quasipoly] at *
@@ -707,7 +582,6 @@ theorem e_pow_of_two_pow_mul_quasipoly (hf : f ∈ two_pow) (hg : g ∈ quasipol
   refine' h_rewrite.congr' ( by filter_upwards [ Filter.eventually_ne_atTop 0 ] with y hy using (by
     rw [ mul_sub, mul_div_cancel₀ _ ( by positivity ) ] ))
 
-
 theorem exp_mul (hf : f ∈ exp) (hg : g ∈ exp) : (f * g) ∈ exp := by
   obtain ⟨a, ha⟩ := hf
   obtain ⟨b, hb⟩ := hg
@@ -739,7 +613,7 @@ end closure
 section ordering
 
 theorem const_subset_log : const ⊆ log := by
-  refine' fun _ h ↦ h.trans _
+  refine fun _ h ↦ h.trans ?_
   norm_num [Asymptotics.isBigO_iff]
   refine ⟨1, 2, fun _ hn ↦ ?_⟩
   exact one_le_mul_of_one_le_of_one_le le_rfl (mod_cast Nat.le_log_of_pow_le one_lt_two hn)
@@ -748,7 +622,7 @@ theorem const_ssubset_log : const ⊂ log := by
   simp only [const, log, bigO, Set.setOf_subset_setOf, ssubset_iff_subset_not_subset,
     Pi.one_apply, Nat.cast_one]
   use const_subset_log
-  simp only [Asymptotics.isBigO_one_iff, Int.norm_natCast, not_forall, Classical.not_imp]
+  simp only [Asymptotics.isBigO_one_iff, Int.norm_natCast, not_forall]
   use Nat.log 2
   constructor
   · norm_num [ Filter.IsBoundedUnder, Filter.IsBounded ];
@@ -1012,7 +886,6 @@ theorem poly_subset_quasipoly : poly ⊆ quasipoly := by
     rintro rfl
     linarith [c.lt_two_pow_self]
   nlinarith [c.lt_pow_self h₂, (2).lt_pow_self h₂]
-
 
 theorem poly_ssubset_quasipoly : poly ⊂ quasipoly := by
   use poly_subset_quasipoly
