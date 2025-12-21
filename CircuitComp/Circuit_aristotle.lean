@@ -1,8 +1,27 @@
+/-
+This file was edited by Aristotle.
+
+Lean version: leanprover/lean4:v4.24.0
+Mathlib version: f897ebcf72cd16f89ab4577d0c826cd14afaafc7
+This project request had uuid: 50e718a3-20df-4145-8e51-e22fa3978aac
+
+The following was proved by Aristotle:
+
+- theorem FeedForward.evalNode_comp_right {α : Type u} {a b c : Type v}
+    (F : FeedForward α a b) (G : FeedForward α b c)
+    (j : Fin (G.depth + 1)) (node : G.nodes j) (x : a → α) :
+    let k : Fin (F.depth + G.depth + 1)
+
+- theorem eval_sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂) (hf : f.depth = d) (hg : g.depth = d) :
+    ∀ (x : a ⊕ a₂ → α), (f.sum g hf hg).eval x = Sum.elim (f.eval (x ∘ .inl)) (g.eval (x ∘ .inr))
+-/
+
 import Mathlib.Computability.MyhillNerode
 import Mathlib.Data.Set.Card
 
 import CircuitComp.GrowthRate
 import CircuitComp.FuncFamily
+
 
 universe u v
 
@@ -62,6 +81,7 @@ def evalNode {d : Fin (F.depth + 1)} (node : F.nodes d) (xs : inp → α) : α :
   Nat.recAux (fun _ node' ↦ xs (F.nodes_zero ▸ node'))
     (fun n ih hd node₀ ↦
       (F.gates ⟨n, Nat.succ_lt_succ_iff.mp hd⟩ node₀).eval (ih _)) d hd node
+
 /- Generated from:
 rcases d with ⟨d, hd⟩
 induction d
@@ -142,8 +162,7 @@ def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : Fe
     · simpa [-FeedForward.nodes_last] using g.nodes_last
 
 /-
-The evaluation of a node in the first part of a composed circuit `G.comp F` is
-the same as its evaluation in `F`.
+Helper lemma: The evaluation of a node in the first part of a composed circuit `G.comp F` is the same as its evaluation in `F`.
 -/
 theorem FeedForward.evalNode_comp_left {α : Type u} {a b c : Type v}
     (F : FeedForward α a b) (G : FeedForward α b c)
@@ -172,8 +191,7 @@ theorem FeedForward.evalNode_comp_left {α : Type u} {a b c : Type v}
     · grind
 
 /-
-The evaluation of a node in the second part of a composed circuit `G.comp F` is
-the same as its evaluation in `G` given the output of `F`.
+Helper lemma: The evaluation of a node in the second part of a composed circuit `G.comp F` is the same as its evaluation in `G` given the output of `F`.
 -/
 theorem FeedForward.evalNode_comp_right {α : Type u} {a b c : Type v}
     (F : FeedForward α a b) (G : FeedForward α b c)
@@ -184,19 +202,20 @@ theorem FeedForward.evalNode_comp_right {α : Type u} {a b c : Type v}
     -- By definition of `G.comp F`, the nodes at position `k` are the same as the nodes at position `j` in `G`.
     simp [FeedForward.comp, k];
     cases F ; aesop) node) x = G.evalNode node (F.eval x) := by
-  simp +decide [ FeedForward.comp ] at *;
-  split_ifs at * <;> simp_all +decide
+  simp +decide [ add_assoc, add_comm, add_left_comm, FeedForward.comp ] at *;
+  split_ifs at * <;> simp_all +decide [ Nat.succ_eq_add_one, add_lt_add_iff_left ];
   · subst_vars;
     convert FeedForward.evalNode_comp_left F G ( Fin.last F.depth ) _ _ using 1;
     congr!;
     grind;
-  · -- By definition of `evalNode`, we can split into cases based on the value of `i`. Since `j` is not zero, we have `j > 0`.
+  ·
+    -- By definition of `evalNode`, we can split into cases based on the value of `i`. Since `j` is not zero, we have `j > 0`.
     have h_pos : 0 < j.val := by
       exact Nat.pos_of_ne_zero fun h => ‹¬j = 0› <| Fin.ext h;
     set k : Fin (F.depth + G.depth + 1) := ⟨F.depth + j.val, by
       linarith [ Fin.is_lt j ]⟩
     generalize_proofs at *;
-    sorry --ughh. `linarith`, according to Aristotle
+    linarith
 
 @[simp]
 theorem eval_comp (F : FeedForward α a b) (G : FeedForward α b c) : (G.comp F).eval = G.eval ∘ F.eval := by
@@ -222,43 +241,59 @@ def sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂) (hf : 
   nodes_zero := by simp
   nodes_last := by simp
 
-theorem evalNode_sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂)
-    (hf : f.depth = d) (hg : g.depth = d)
-    (k : Fin (d + 1)) (node : (f.sum g hf hg).nodes k) (x : a ⊕ a₂ → α) :
-    (f.sum g hf hg).evalNode node x = node.elim (f.evalNode · (x ∘ Sum.inl)) (g.evalNode · (x ∘ Sum.inr)) := by
-  revert k node;
-  intro k n;
-  induction k using Fin.inductionOn
-  all_goals generalize_proofs at *;
-  · cases n <;> simp +decide [ FeedForward.evalNode ];
-    · cases f ; cases g ; aesop;
-    · cases f ; cases g ; aesop;
-  · unfold FeedForward.evalNode;
-    cases n <;> simp ( config := { decide := Bool.true } ) [ *, Nat.recAux ];
-    · unfold FeedForward.Gate.eval;
-      congr! 1;
-      aesop;
-    · unfold FeedForward.Gate.eval;
-      congr! 2;
-      aesop
+noncomputable section AristotleLemmas
 
-theorem eval_sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂)
-    (hf : f.depth = d) (hg : g.depth = d) :
+theorem evalNode_sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂) (hf : f.depth = d) (hg : g.depth = d)
+    (k : Fin (d + 1)) (node : (f.sum g hf hg).nodes k) (x : a ⊕ a₂ → α) :
+    (f.sum g hf hg).evalNode node x =
+      Sum.elim (fun n => f.evalNode n (x ∘ Sum.inl)) (fun n => g.evalNode n (x ∘ Sum.inr)) node := by
+        revert k node;
+        intro k n;
+        induction k using Fin.inductionOn
+        all_goals generalize_proofs at *;
+        · cases n <;> simp +decide [ FeedForward.evalNode ];
+          · cases f ; cases g ; aesop;
+          · cases f ; cases g ; aesop;
+        · unfold FeedForward.evalNode;
+          cases n <;> simp ( config := { decide := Bool.true } ) [ *, Nat.recAux ];
+          · unfold FeedForward.Gate.eval;
+            congr! 1;
+            aesop;
+          · unfold FeedForward.Gate.eval;
+            congr! 2;
+            aesop
+
+theorem cast_Sum_inl {α α' β β' : Type} (hα : α = α') (hβ : β = β') (a : α) :
+    cast (congr (congrArg Sum hα) hβ) (Sum.inl a) = Sum.inl (cast hα a) := by
+  cases hα; cases hβ; rfl
+
+theorem cast_Sum_inr {α α' β β' : Type} (hα : α = α') (hβ : β = β') (b : β) :
+    cast (congr (congrArg Sum hα) hβ) (Sum.inr b) = Sum.inr (cast hβ b) := by
+  cases hα; cases hβ; rfl
+
+end AristotleLemmas
+
+theorem eval_sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂) (hf : f.depth = d) (hg : g.depth = d) :
     ∀ (x : a ⊕ a₂ → α), (f.sum g hf hg).eval x = Sum.elim (f.eval (x ∘ .inl)) (g.eval (x ∘ .inr)) := by
   intro x
-  ext
-  unfold FeedForward.eval
-  convert FeedForward.evalNode_sum f g hf hg (Fin.last d) _ x using 2
-  simp only [Fin.cast, Fin.val_last]
-  congr
-  · exact f.nodes_last.symm.trans (by congr; aesop)
-  · exact g.nodes_last.symm.trans (by congr; aesop)
-  · congr! 3
-    · exact hf ▸ f.nodes_last.symm
-    · grind
-  · congr! 3
-    · exact hg ▸ g.nodes_last.symm
-    · grind
+  ext n;
+  unfold FeedForward.eval;
+  convert FeedForward.evalNode_sum f g hf hg ( Fin.last d ) ( ?_ ) x using 2;
+  simp +decide [ Fin.cast, f.nodes_last, g.nodes_last ];
+  congr;
+  · have h_last : f.nodes (Fin.last f.depth) = b := by
+      exact f.nodes_last;
+    exact h_last.symm.trans ( by congr; aesop );
+  · have := g.nodes_last;
+    exact this.symm.trans ( by congr; aesop );
+  · congr! 3;
+    · convert f.nodes_last.symm;
+      aesop;
+    · bound;
+  · congr! 2;
+    · exact hg ▸ g.nodes_last.symm;
+    · aesop;
+    · grind;
   · grind
 
 /-- The cardinal width of a feedforward circuit is the largest number of nodes in any layer. -/
