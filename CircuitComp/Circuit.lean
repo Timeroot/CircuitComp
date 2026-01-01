@@ -112,13 +112,13 @@ theorem Fin.castSucc_lt_top (n : ℕ) (x : Fin n) : x.castSucc < ⊤ :=
 /-- Compose two `FeedForward`s by stacking one on top of the other. -/
 def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : FeedForward α a c where
   depth := f.depth + g.depth
-  nodes k := if h : k.val ≤ f.depth then f.nodes ⟨k, by omega⟩ else g.nodes ⟨k - f.depth, by omega⟩
+  nodes k := if h : k.val ≤ f.depth then f.nodes ⟨k, Nat.lt_add_one_of_le h⟩ else g.nodes ⟨k - f.depth, let _ := h; by omega⟩
   gates k n := if h : k.val < f.depth
     then cast
-      (by rw [dif_pos (by exact Nat.le_of_succ_le h)]; rfl)
-      (f.gates ⟨k.val, h⟩ (cast (by rw [dif_pos (by exact h)]; simp) n))
+      (congrArg _ (dif_pos (Nat.le_of_succ_le h)).symm)
+      (f.gates ⟨k.val, h⟩ (cast (dif_pos h) n))
     else cast
-      (by
+      (let _ := h; by
         split_ifs with h₂
         · congr 1
           trans b
@@ -131,8 +131,8 @@ def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : Fe
             simp at h₂ ⊢
             omega
         · rfl)
-      (g.gates ⟨k.val - f.depth, by omega⟩
-        (cast (by rw [dif_neg (by simp; omega)]; congr; simp; omega) n))
+      (g.gates ⟨k.val - f.depth, let _ := h; by omega⟩
+        (cast (let _ := h; by rw [dif_neg (by simp; omega)]; congr; simp; omega) n))
   nodes_zero := by simp
   nodes_last := by
     split_ifs with h
@@ -141,11 +141,16 @@ def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : Fe
       simpa [-FeedForward.nodes_last, h] using f.nodes_last
     · simpa [-FeedForward.nodes_last] using g.nodes_last
 
-/-
+@[simp]
+theorem comp_depth (g : FeedForward α b c) (f : FeedForward α a b) :
+    (g.comp f).depth = f.depth + g.depth := by
+  rfl
+
+/--
 The evaluation of a node in the first part of a composed circuit `G.comp F` is
 the same as its evaluation in `F`.
 -/
-theorem FeedForward.evalNode_comp_left {α : Type u} {a b c : Type v}
+theorem evalNode_comp_left {α : Type u} {a b c : Type v}
     (F : FeedForward α a b) (G : FeedForward α b c)
     (i : Fin (F.depth + 1)) (node : F.nodes i) (x : a → α) :
     let k : Fin (F.depth + G.depth + 1) := ⟨i.val, by
@@ -165,38 +170,95 @@ theorem FeedForward.evalNode_comp_left {α : Type u} {a b c : Type v}
     split at pf_2
     · congr!;
       · grind +ring;
-      · convert a_1 _ _ _;
-        grind;
+      · convert a_1 _ _ _
+        grind
         exact Nat.lt_of_succ_lt pf;
         exact rfl;
     · grind
 
+@[simp]
+theorem evalNode_zero (F : FeedForward α inp out)
+    (node : F.nodes 0) (xs : inp → α) :
+    F.evalNode (d := 0) node xs = xs (F.nodes_zero ▸ node) := by
+  simp [FeedForward.evalNode]
+
+theorem evalNode_succ (F : FeedForward α inp out)
+    (i : Fin F.depth) (node : F.nodes i.succ) (xs : inp → α) :
+    F.evalNode node xs = (F.gates i node).eval (fun n ↦ F.evalNode n xs) := by
+  rfl
+
 /-
+Helper lemma: The nodes of the composed circuit at depth `F.depth + j` correspond to the nodes of `G` at depth `j`.
+-/
+theorem comp_nodes_eq
+    (F : FeedForward α a b) (G : FeedForward α b c) (j : Fin (G.depth + 1)) :
+    (G.comp F).nodes ⟨F.depth + j.val, Nat.add_lt_add_left j.isLt F.depth⟩ = G.nodes j := by
+  simp [FeedForward.comp,];
+  intro hj;
+  subst hj;
+  convert F.nodes_last.trans G.nodes_zero.symm
+
+/--
 The evaluation of a node in the second part of a composed circuit `G.comp F` is
 the same as its evaluation in `G` given the output of `F`.
 -/
-theorem FeedForward.evalNode_comp_right {α : Type u} {a b c : Type v}
+theorem evalNode_comp_right
     (F : FeedForward α a b) (G : FeedForward α b c)
     (j : Fin (G.depth + 1)) (node : G.nodes j) (x : a → α) :
-    let k : Fin (F.depth + G.depth + 1) := ⟨F.depth + j.val, by
-      linarith [ Fin.is_lt j ]⟩
-    (G.comp F).evalNode (d := k) (cast (by
-    -- By definition of `G.comp F`, the nodes at position `k` are the same as the nodes at position `j` in `G`.
-    simp [FeedForward.comp, k];
-    cases F ; aesop) node) x = G.evalNode node (F.eval x) := by
-  simp +decide [ FeedForward.comp ] at *;
-  split_ifs at * <;> simp_all +decide
-  · subst_vars;
-    convert FeedForward.evalNode_comp_left F G ( Fin.last F.depth ) _ _ using 1;
-    congr!;
+    let k : Fin (F.depth + G.depth + 1) := ⟨F.depth + j.val, by omega⟩
+    (G.comp F).evalNode (d := k) (cast (by simp [FeedForward.comp, k]; cases F; aesop) node) x = G.evalNode node (F.eval x) := by
+  generalize_proofs pf1 pf2 pf3
+  induction j using Fin.inductionOn
+  · simp_all
+    convert FeedForward.evalNode_comp_left F G ⟨ F.depth, Nat.lt_succ_self _ ⟩ _ x using 1;
     grind;
-  · -- By definition of `evalNode`, we can split into cases based on the value of `i`. Since `j` is not zero, we have `j > 0`.
-    have h_pos : 0 < j.val := by
-      exact Nat.pos_of_ne_zero fun h => ‹¬j = 0› <| Fin.ext h;
-    set k : Fin (F.depth + G.depth + 1) := ⟨F.depth + j.val, by
-      linarith [ Fin.is_lt j ]⟩
+  · rename_i j ih
+    rcases j with ⟨j, hj⟩
+    dsimp [Fin.succ] at pf1 pf2 pf3 ih ⊢
+    simp only [evalNode_succ, Fin.castSucc_mk]
+    simp +zetaDelta at *;
+    have h_eval_comp_succ : (G.comp F).evalNode (d := ⟨F.depth + (j + 1), pf2⟩) (cast pf3 node) x = ((G.comp F).gates ⟨F.depth + j, by
+      rw [ FeedForward.depth ] at * ; linarith⟩ (cast pf3 node)).eval (fun n => (G.comp F).evalNode (d := ⟨F.depth + j, by
+      linarith [ FeedForward.comp_depth G F ]⟩) n x) := by
+      exact rfl
     generalize_proofs at *;
-    sorry --ughh. `linarith`, according to Aristotle
+    have h_eval_comp_gates : (G.comp F).gates ⟨F.depth + j, by
+      (expose_names; exact pf_3)⟩ (cast pf3 node) = cast (by
+    all_goals generalize_proofs at *;
+    have h_eval_comp_gates : (G.comp F).nodes ⟨F.depth + j, by
+      linarith [ Nat.sub_add_cancel ( show F.depth ≤ F.depth + G.depth from Nat.le_add_right _ _ ) ]⟩ = G.nodes ⟨j, by
+      linarith⟩ := by
+      exact FeedForward.comp_nodes_eq F G ⟨j, by linarith⟩
+    generalize_proofs at *;
+    exact h_eval_comp_gates ▸ rfl) (G.gates ⟨j, hj⟩ node) := by
+      all_goals generalize_proofs at *;
+      simp +decide [ FeedForward.comp, * ];
+      grind
+    generalize_proofs at *;
+    convert h_eval_comp_succ using 2;
+    rw [ h_eval_comp_gates, FeedForward.Gate.eval, FeedForward.Gate.eval ];
+    congr! 2
+    generalize_proofs at *;
+    · simp +zetaDelta at *;
+      convert rfl;
+      generalize_proofs at *;
+      -- Since the cast is just a typecast and doesn't change the underlying data, the op should be the same. Therefore, the equality holds by definition of cast.
+      apply Eq.symm
+      have h_cast_eq : (G.comp F).nodes ⟨F.depth + j, by
+        linarith⟩ = G.nodes ⟨j, by
+        -- Since $j < G.depth$, we have $j < G.depth + 1$ by the properties of natural numbers.
+        apply Nat.lt_succ_of_lt hj⟩ := by
+        convert FeedForward.comp_nodes_eq F G ⟨ j, by linarith ⟩ using 1
+      generalize_proofs at *
+      grind
+    · congr! 1;
+    · convert ih _ _ _ _ |> Eq.symm using 1
+      all_goals generalize_proofs at *;
+      · simp +zetaDelta at *;
+        grind;
+      · linarith;
+      · linarith;
+      · convert FeedForward.comp_nodes_eq F G ⟨ j, by linarith ⟩ |> Eq.symm using 1
 
 @[simp]
 theorem eval_comp (F : FeedForward α a b) (G : FeedForward α b c) : (G.comp F).eval = G.eval ∘ F.eval := by

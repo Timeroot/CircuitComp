@@ -1280,6 +1280,44 @@ theorem poly_ssubset_quasipoly : poly ⊂ quasipoly := by
     norm_num [ Norm.norm ] at ha
     exact ha.not_gt <| mod_cast hm.2
 
+lemma polylog_is_littleO_sqrt {f : ℕ → ℕ} (hf : f ∈ GrowthRate.polylog) :
+    (fun n ↦ (f n : ℝ)) =o[.atTop] (fun n ↦ Real.sqrt n) := by
+  have h_log_poly : ∀ w : ℕ, (fun n => (Nat.log 2 n : ℝ) ^ w) =o[Filter.atTop] (fun n => Real.sqrt n) := by
+    intro w
+    have h_log_poly_aux : Filter.Tendsto (fun n => (Real.log n / Real.log 2) ^ w / Real.sqrt n) Filter.atTop (nhds 0) := by
+      -- We can simplify the expression inside the limit.
+      suffices h_simplify : Filter.Tendsto (fun n => (Real.log n) ^ w / Real.sqrt n) Filter.atTop (nhds 0) by
+        convert h_simplify.div_const ( Real.log 2 ^ w ) using 2 <;> ring;
+      -- Let $y = \log x$, therefore the expression becomes $\frac{y^w}{e^{y/2}}$.
+      suffices h_log : Filter.Tendsto (fun y => y ^ w / Real.exp (y / 2)) Filter.atTop (nhds 0) by
+        have := h_log.comp ( Real.tendsto_log_atTop );
+        apply this.congr'
+        filter_upwards [ Filter.eventually_gt_atTop 0 ] with x hx
+        rw [ Function.comp_apply, Real.sqrt_eq_rpow, Real.rpow_def_of_pos hx ]
+        ring_nf
+      -- Let $z = \frac{y}{2}$, therefore the limit becomes $\lim_{z \to \infty} \frac{(2z)^w}{e^z}$.
+      suffices h_z : Filter.Tendsto (fun z => (2 * z) ^ w / Real.exp z) Filter.atTop (nhds 0) by
+        convert h_z.comp ( Filter.tendsto_id.atTop_mul_const ( by norm_num : 0 < ( 2⁻¹ : ℝ ) ) ) using 2
+        norm_num
+        ring_nf
+      -- We can factor out the constant $2^w$ from the limit.
+      suffices h_factor : Filter.Tendsto (fun z => z ^ w / Real.exp z) Filter.atTop (nhds 0) by
+        convert h_factor.const_mul ( 2 ^ w ) using 2 <;> ring;
+      simpa [ Real.exp_neg ] using Real.tendsto_pow_mul_exp_neg_atTop_nhds_zero w;
+    rw [ Asymptotics.isLittleO_iff_tendsto' ];
+    · have h_log_poly_aux : Filter.Tendsto (fun n => (Nat.log 2 n : ℝ) ^ w / Real.sqrt n) Filter.atTop (nhds 0) := by
+        have : ∀ n : ℕ, n ≥ 2 → (Nat.log 2 n : ℝ) ^ w / Real.sqrt n ≤ (Real.log n / Real.log 2) ^ w / Real.sqrt n := by
+          intro n hn; gcongr;
+          rw [ le_div_iff₀ ( Real.log_pos ( by norm_num ) ), ← Real.log_pow ] ; exact Real.log_le_log ( by positivity ) ( mod_cast Nat.pow_log_le_self _ ( by positivity ) )
+        exact squeeze_zero_norm' ( Filter.eventually_atTop.mpr ⟨ 2, fun n hn => by rw [ Real.norm_of_nonneg ( by positivity ) ] ; exact this n hn ⟩ ) ( h_log_poly_aux.comp tendsto_natCast_atTop_atTop );
+      convert h_log_poly_aux using 1;
+    · filter_upwards [ Filter.eventually_gt_atTop 0 ] with x hx hx' using absurd hx' <| ne_of_gt <| Real.sqrt_pos.mpr <| Nat.cast_pos.mpr hx;
+  rcases hf with ⟨w, hw⟩
+  have h_log_poly : (fun n => (f n : ℝ)) =O[Filter.atTop] (fun n => (Nat.log 2 n : ℝ) ^ w) := by
+    rw [ Asymptotics.isBigO_iff ] at *;
+    aesop;
+  exact h_log_poly.trans_isLittleO ( by aesop )
+
 theorem quasipoly_subset_two_pow : quasipoly ⊆ two_pow := by
   rintro f ⟨ C, hC ⟩;
   have h_exp : (fun n => 2 ^ (Nat.log 2 n ^ C) : ℕ → ℤ) =O[Filter.atTop] (fun n => 2 ^ n : ℕ → ℤ) := by

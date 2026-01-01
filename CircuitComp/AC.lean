@@ -4,9 +4,11 @@ import Mathlib.Algebra.MvPolynomial.Eval
 import Mathlib.Algebra.MvPolynomial.Degrees
 import Mathlib.Algebra.MvPolynomial.CommRing
 import Mathlib.RingTheory.MvPolynomial.Ideal
+import Mathlib.Algebra.Field.ZMod
 
 open FeedForward
 open CircuitFamily
+open Finset
 
 /-!
 Defines the class AC₀, which is typically defined as constant-depth boolean circuits with
@@ -142,19 +144,19 @@ lemma subset_sum_zero_bound {n : ℕ} (v : Fin n → ZMod 3) (hv : v ≠ 0) :
       simp_all
       use if i ∈ s then s \ { i } else Insert.insert i s; aesop;
     exact le_trans ( Finset.card_le_card h_pairs ) ( Finset.card_image_le );
-  have := Finset.card_add_card_compl ( Finset.filter ( fun s : Finset ( Fin n ) => ∑ i ∈ s, v i = 0 ) ( Finset.powerset ( Finset.univ : Finset ( Fin n ) ) ) ) ; simp_all +decide [ Finset.filter_not, Finset.card_sdiff ] ; linarith
+  have := Finset.card_add_card_compl ( Finset.filter ( fun s : Finset ( Fin n ) => ∑ i ∈ s, v i = 0 ) ( Finset.powerset ( Finset.univ : Finset ( Fin n ) ) ) ) ; simp_all [ Finset.filter_not, Finset.card_sdiff ] ; linarith
 
-/-
+/--
 The number of tuples where a predicate holds for all components is the power of the number of elements where it holds. This is a standard counting argument: the set of such functions is isomorphic to the set of functions from ι to the subtype {b // P b}, which has cardinality |{b // P b}|^|ι|.
 -/
 lemma tuple_fail_count {ι : Type*} [Fintype ι] [DecidableEq ι] {β : Type*} [Fintype β] (P : β → Prop) [DecidablePred P] :
     (Finset.univ.filter (fun (f : ι → β) => ∀ i, P (f i))).card = (Finset.univ.filter P).card ^ Fintype.card ι := by
-      have h_count : {f : ι → β | ∀ i, P (f i)} ≃ (ι → {b : β | P b}) := by
-        exact ⟨ fun f => fun i => ⟨ f.val i, f.property i ⟩, fun f => ⟨ _, fun i => ( f i ).2 ⟩, fun f => rfl, fun f => rfl ⟩;
-      have := Fintype.card_congr h_count;
-      simp_all +decide [ Fintype.card_pi, Fintype.card_subtype ]
+  have h_count : {f : ι → β | ∀ i, P (f i)} ≃ (ι → {b : β | P b}) := by
+    exact ⟨ fun f => fun i => ⟨ f.val i, f.property i ⟩, fun f => ⟨ _, fun i => ( f i ).2 ⟩, fun f => rfl, fun f => rfl ⟩;
+  have := Fintype.card_congr h_count;
+  simp_all [ Fintype.card_pi, Fintype.card_subtype ]
 
-/-
+/--
 A probabilistic method averaging argument: if for every bad input, the number of failing witnesses is at most |β|/C, then there exists a witness that fails on at most |Bad|/C inputs.
 Proof: Consider the sum of indicators of failures over Bad x β.
 ∑_{a ∈ Bad} |{b | Fail a b}| ≤ |Bad| * (|β|/C).
@@ -162,53 +164,47 @@ Swap sums: ∑_{b ∈ β} |{a ∈ Bad | Fail a b}| ≤ |Bad| * |β| / C.
 The average number of failures per b is ≤ |Bad|/C.
 Thus there exists b with number of failures ≤ |Bad|/C.
 -/
-open Finset
-
 lemma prob_method_averaging {α β : Type*} [Fintype α] [DecidableEq α] [Fintype β] [Nonempty β]
     (Bad : Finset α) (Fail : α → β → Prop) [∀ a b, Decidable (Fail a b)]
     (C : ℕ)
     (h_prob : ∀ a ∈ Bad, (univ.filter (Fail a ·)).card * C ≤ Fintype.card β) :
     ∃ (b : β), (univ.filter (fun a => a ∈ Bad ∧ Fail a b)).card * C ≤ Bad.card := by
-      by_contra! h;
-      -- Let's consider the sum of the cardinalities of the sets {a ∈ Bad | Fail a b} over all b in β.
-      have h_sum : ∑ b : β, (Finset.card (Finset.filter (fun a => a ∈ Bad ∧ Fail a b) Finset.univ)) = ∑ a ∈ Bad, (Finset.card (Finset.filter (fun b => Fail a b) Finset.univ)) := by
-        simp +decide only [card_filter];
-        rw [ Finset.sum_comm ];
-        rw [ ← Finset.sum_subset ( Finset.subset_univ Bad ) ] <;> aesop;
-      have := Finset.sum_le_sum fun b ( _ : b ∈ Finset.univ ) => Nat.mul_le_mul_right C ( h b );
-      simp_all +decide [ ← Finset.sum_mul _ _ _ ];
-      -- By combining the results from h_sum and this, we can derive the desired inequality.
-      have h_combined : Fintype.card β * (#Bad + 1) ≤ (∑ a ∈ Bad, #{b : β | Fail a b}) * C := by
-        cases C <;> aesop;
-      have h_combined : (∑ a ∈ Bad, #{b : β | Fail a b}) * C ≤ Fintype.card β * #Bad := by
-        exact le_trans ( Finset.sum_mul _ _ _ |> le_of_eq ) ( by simpa [ mul_comm ] using Finset.sum_le_sum fun a ha => h_prob a ha );
-      nlinarith [ Fintype.card_pos_iff.mpr ‹_› ]
+  by_contra! h;
+  -- Let's consider the sum of the cardinalities of the sets {a ∈ Bad | Fail a b} over all b in β.
+  have h_sum : ∑ b : β, (Finset.card (Finset.filter (fun a => a ∈ Bad ∧ Fail a b) Finset.univ)) = ∑ a ∈ Bad, (Finset.card (Finset.filter (fun b => Fail a b) Finset.univ)) := by
+    simp only [card_filter];
+    rw [ Finset.sum_comm ];
+    rw [ ← Finset.sum_subset ( Finset.subset_univ Bad ) ] <;> aesop;
+  have := Finset.sum_le_sum fun b ( _ : b ∈ Finset.univ ) => Nat.mul_le_mul_right C ( h b );
+  simp_all [ ← Finset.sum_mul _ _ _ ];
+  -- By combining the results from h_sum and this, we can derive the desired inequality.
+  have h_combined : Fintype.card β * (#Bad + 1) ≤ (∑ a ∈ Bad, #{b : β | Fail a b}) * C := by
+    cases C <;> aesop;
+  have h_combined : (∑ a ∈ Bad, #{b : β | Fail a b}) * C ≤ Fintype.card β * #Bad := by
+    exact le_trans ( Finset.sum_mul _ _ _ |> le_of_eq ) ( by simpa [ mul_comm ] using Finset.sum_le_sum fun a ha => h_prob a ha );
+  nlinarith [ Fintype.card_pos_iff.mpr ‹_› ]
 
-/-
+/--
 Define the value of the approximation function for a given input vector v and random sets S.
 -/
-open MvPolynomial Finset
-
 def approxOr_val {width ℓ : ℕ} (v : Fin width → ZMod 3) (S : Fin ℓ → Finset (Fin width)) : ZMod 3 :=
   1 - ∏ k, (1 - (∑ i ∈ S k, v i)^2)
 
-/-
+/--
 Define the value of the logical OR function over ZMod 3.
 -/
-open MvPolynomial Finset
-
 def OR_val {width : ℕ} (v : Fin width → ZMod 3) : ZMod 3 :=
   1 - ∏ k, (1 - (v k)^2)
 
-/-
+/--
 The evaluation of the polynomial `approxOr` is equal to the `approxOr_val` function applied to the evaluations of the input polynomials. This follows from the fact that evaluation is a ring homomorphism.
 -/
 lemma approxOr_eval_eq {vars width ℓ : ℕ} (polys : (i : Fin width) → MvPolynomial (Fin vars) (ZMod 3))
     (S : Fin ℓ → Finset (Fin width)) (y : Fin vars → ZMod 3) :
     (approxOr polys S).eval y = approxOr_val (fun i ↦ (polys i).eval y) S := by
-      unfold approxOr approxOr_val; aesop;
+  unfold approxOr approxOr_val; aesop;
 
-/-
+/--
 The approximation fails (value differs from OR) if and only if the input vector is non-zero AND for all chosen subsets, the sum of components is zero.
 Proof:
 If v = 0, then OR_val v = 0 and approxOr_val v S = 0 (since all sums are 0). So no failure.
@@ -221,27 +217,26 @@ So failure iff all sums are 0.
 -/
 lemma approxOr_failure_iff {width ℓ : ℕ} (v : Fin width → ZMod 3) (S : Fin ℓ → Finset (Fin width)) :
     approxOr_val v S ≠ OR_val v ↔ (v ≠ 0 ∧ ∀ k, ∑ i ∈ S k, v i = 0) := by
-      unfold approxOr_val OR_val;
-      by_cases h : v = 0 <;> simp_all
-      constructor;
-      · intro h_prod k;
-        contrapose! h_prod; simp_all
-        have : ∀ x : ZMod 3, x ≠ 0 → (1 - x ^ 2) = 0 := by
-          native_decide;
-        rw [ Finset.prod_eq_zero ( Finset.mem_univ k ) ( this _ h_prod ), Finset.prod_eq_zero ( Finset.mem_univ ( Classical.choose ( Function.ne_iff.mp h ) ) ) ( this _ ( Classical.choose_spec ( Function.ne_iff.mp h ) |> fun h => by aesop ) ) ];
-      · intro hsum_zero
-        have h_prod_zero : ∏ k : Fin width, (1 - v k ^ 2) = 0 := by
-          -- Since $v$ is not the zero vector, there exists some $k$ such that $v k \neq 0$. In $ZMod 3$, the non-zero elements are $1$ and $2$. If $v k$ is $1$ or $2$, then $v k^2$ is $1$, so $1 - v k^2$ is $0$. Therefore, the product includes a zero term, making the entire product zero.
-          obtain ⟨k, hk⟩ : ∃ k, v k ≠ 0 := by
-            exact Function.ne_iff.mp h;
-          have h_prod_zero : ∃ k, v k ≠ 0 ∧ v k ^ 2 = 1 := by
-            have h_prod_zero : ∀ x : ZMod 3, x ≠ 0 → x ^ 2 = 1 := by
-              native_decide;
-            exact ⟨ k, hk, h_prod_zero _ hk ⟩;
-          exact Finset.prod_eq_zero ( Finset.mem_univ h_prod_zero.choose ) ( by simp ( config := { decide := Bool.true } ) [ h_prod_zero.choose_spec ] );
-        aesop
+  unfold approxOr_val OR_val
 
-/-
+  by_cases h : v = 0 <;> simp [h]
+  constructor;
+  · intro h_prod k;
+    contrapose! h_prod; simp_all
+    have h_prod_zero : ∀ x : ZMod 3, x ≠ 0 → (1 - x ^ 2) = 0 := by decide
+    rw [Finset.prod_eq_zero (Finset.mem_univ k) (h_prod_zero _ h_prod),
+      Finset.prod_eq_zero (Finset.mem_univ (Classical.choose ( Function.ne_iff.mp h ) ) ) (h_prod_zero _ ( Classical.choose_spec ( Function.ne_iff.mp h ) |> (by simpa using ·)))]
+  · intro hsum_zero
+    have h_prod_zero : ∏ k : Fin width, (1 - v k ^ 2) = 0 := by
+      -- Since $v$ is not the zero vector, there exists some $k$ such that $v k \neq 0$. In $ZMod 3$, the non-zero elements are $1$ and $2$. If $v k$ is $1$ or $2$, then $v k^2$ is $1$, so $1 - v k^2$ is $0$. Therefore, the product includes a zero term, making the entire product zero.
+      obtain ⟨k, hk⟩ : ∃ k, v k ≠ 0 ∧ v k ^ 2 = 1 := by
+        obtain ⟨k, hk⟩ : ∃ k, v k ≠ 0 := Function.ne_iff.mp h;
+        have h_prod_zero : ∀ x : ZMod 3, x ≠ 0 → x ^ 2 = 1 := by decide
+        exact ⟨k, hk, h_prod_zero _ hk⟩
+      exact Finset.prod_eq_zero (Finset.mem_univ k) (by simp [hk])
+    aesop
+
+/--
 For any non-zero input vector, the number of bad choices of `S` (causing failure) is at most `Total / 2^ℓ`. This follows from `subset_sum_zero_bound` and `tuple_fail_count`.
 Proof:
 Failure iff `∀ k, ∑ i ∈ S k, v i = 0`.
@@ -251,22 +246,22 @@ So `count bad S ≤ (2^width / 2)^ℓ = (2^width)^ℓ / 2^ℓ = Total / 2^ℓ`.
 -/
 lemma count_bad_S {width ℓ : ℕ} (v : Fin width → ZMod 3) (hv : v ≠ 0) :
     (Finset.univ.filter (fun S : Fin ℓ → Finset (Fin width) => approxOr_val v S ≠ OR_val v)).card * 2^ℓ ≤ Fintype.card (Fin ℓ → Finset (Fin width)) := by
-      by_cases h_subset_zero_bound : 2 * (Finset.univ.filter (fun (s : Finset (Fin width)) => ∑ i ∈ s, v i = 0)).card ≤ Fintype.card (Finset (Fin width));
-      · have h_card_bad_S : (Finset.univ.filter (fun (S : Fin ℓ → Finset (Fin width)) => ∀ k, ∑ i ∈ S k, v i = 0)).card ≤ (Fintype.card (Finset (Fin width))) ^ ℓ / 2 ^ ℓ := by
-          have h_card_bad_S : (Finset.univ.filter (fun (S : Fin ℓ → Finset (Fin width)) => ∀ k, ∑ i ∈ S k, v i = 0)).card = (Finset.univ.filter (fun (s : Finset (Fin width)) => ∑ i ∈ s, v i = 0)).card ^ ℓ := by
-            convert tuple_fail_count ( fun s => ∑ i ∈ s, v i = 0 ) using 1;
-            convert rfl;
-            norm_num;
-          rw [ Nat.le_div_iff_mul_le ( by positivity ) ] ; convert Nat.pow_le_pow_left h_subset_zero_bound ℓ using 1
-          ring_nf
-          congr! 1;
-        refine' le_trans ( Nat.mul_le_mul_right _ ( _ : _ ≤ _ ) ) _;
-        exact Fintype.card ( Finset ( Fin width ) ) ^ ℓ / 2 ^ ℓ;
-        · convert h_card_bad_S using 2;
-          ext; simp +decide [ approxOr_failure_iff, hv ] ;
-        · norm_num [ Fintype.card_pi ];
-          exact Nat.div_mul_le_self _ _;
-      · exact False.elim <| h_subset_zero_bound <| by simpa using subset_sum_zero_bound v hv;
+  by_cases h_subset_zero_bound : 2 * (Finset.univ.filter (fun (s : Finset (Fin width)) => ∑ i ∈ s, v i = 0)).card ≤ Fintype.card (Finset (Fin width));
+  · have h_card_bad_S : (Finset.univ.filter (fun (S : Fin ℓ → Finset (Fin width)) => ∀ k, ∑ i ∈ S k, v i = 0)).card ≤ (Fintype.card (Finset (Fin width))) ^ ℓ / 2 ^ ℓ := by
+      have h_card_bad_S : (Finset.univ.filter (fun (S : Fin ℓ → Finset (Fin width)) => ∀ k, ∑ i ∈ S k, v i = 0)).card = (Finset.univ.filter (fun (s : Finset (Fin width)) => ∑ i ∈ s, v i = 0)).card ^ ℓ := by
+        convert tuple_fail_count ( fun s => ∑ i ∈ s, v i = 0 ) using 1;
+        convert rfl;
+        norm_num;
+      rw [ Nat.le_div_iff_mul_le ( by positivity ) ] ; convert Nat.pow_le_pow_left h_subset_zero_bound ℓ using 1
+      ring_nf
+      congr! 1;
+    refine' le_trans ( Nat.mul_le_mul_right _ ( _ : _ ≤ _ ) ) _;
+    exact Fintype.card ( Finset ( Fin width ) ) ^ ℓ / 2 ^ ℓ;
+    · convert h_card_bad_S using 2;
+      ext; simp [ approxOr_failure_iff, hv ] ;
+    · norm_num [ Fintype.card_pi ];
+      exact Nat.div_mul_le_self _ _;
+  · exact False.elim <| h_subset_zero_bound <| by simpa using subset_sum_zero_bound v hv;
 
 /-- By the union bound, there are some sets S such that `approxOr` is the logical OR
 of the inputs on almost all valuations. -/
@@ -291,7 +286,7 @@ theorem exists_good_approxOr (vars width ℓ : ℕ)
     use S;
     refine le_trans ?_ ( hS.trans ?_ );
     · gcongr;
-      intro x hx; by_cases hx' : ( fun i => MvPolynomial.eval ( fun i => ( x i : ZMod 3 ) ) ( polys i ) ) = 0 <;> simp_all +decide [ funext_iff ] ;
+      intro x hx; by_cases hx' : ( fun i => MvPolynomial.eval ( fun i => ( x i : ZMod 3 ) ) ( polys i ) ) = 0 <;> simp_all [ funext_iff ] ;
       · exact False.elim <| hx <| by unfold approxOr_val OR_val; norm_num;
       · exact Finset.mem_filter.mpr ⟨ Finset.mem_univ _, fun h => hx' |> fun ⟨ i, hi ⟩ => hi <| by simpa using congr_fun h i ⟩;
     · exact le_trans ( Finset.card_le_univ _ ) ( by norm_num [ Finset.card_univ ] );
@@ -302,7 +297,7 @@ theorem exists_good_approxOr (vars width ℓ : ℕ)
     · positivity;
     · positivity;
   use S
-  simp_all +decide [ Set.ncard_eq_toFinset_card' ];
+  simp_all [ Set.ncard_eq_toFinset_card' ];
   norm_num [ approxOr_eval_eq ] at *;
   norm_num [ OR_val ] at * ; ring_nf at * ; linarith
 
@@ -313,13 +308,20 @@ theorem exists_good_approxAnd (vars width ℓ : ℕ)
         approxAnd.totalDegree ≤ 2 * ℓ * ⨆ i, (polys i).totalDegree ∧
       { x : Fin vars → Fin 2 |
         let y : Fin vars → ZMod 3 := (fun i ↦ (x i : ZMod 3))
-        approxAnd.eval y = (∏ k, ((polys k).eval y)^2)
+        approxAnd.eval y = (∏ k, (1 - (1 - (polys k).eval y)^2))
       }.ncard ≥ (1 - 2^(-ℓ : ℤ) : ℚ) * 2^vars := by
-  obtain ⟨S, hS⟩ := exists_good_approxOr vars width ℓ polys
-  have h_P_OR_eval := approxOr_eval_eq polys S
-  have h_P_OR_deg := approxOr_totalDegree vars width ℓ polys S
-  set P_OR := approxOr polys S
-  sorry
+        -- Apply `exists_good_approxOr` to the polynomials `fun i => 1 - polys i`.
+        obtain ⟨S, hS⟩ := exists_good_approxOr vars width ℓ (fun i => 1 - polys i);
+        refine' ⟨ 1 - approxOr ( fun i => 1 - polys i ) S, _, _ ⟩;
+        · have := approxOr_totalDegree vars width ℓ ( fun i => 1 - polys i ) S;
+          refine' le_trans ( MvPolynomial.totalDegree_sub _ _ ) ( max_le _ _ );
+          · norm_num [ MvPolynomial.totalDegree_one ];
+          · refine' le_trans this ( mul_le_mul_of_nonneg_left ( ciSup_mono _ _ ) ( by positivity ) );
+            · exact Set.finite_range _ |> Set.Finite.bddAbove;
+            · intro i; exact (by
+              refine' le_trans ( MvPolynomial.totalDegree_sub _ _ ) _ ; norm_num);
+        · convert hS using 4 ; norm_num [ sub_mul, Finset.prod_mul_distrib, pow_succ' ];
+          grind
 
 noncomputable section AristotleLemmas
 
@@ -339,24 +341,31 @@ lemma exists_poly_for_gate {n ℓ : ℕ}
         let inputs := fun i ↦ (polys i).eval (fun j ↦ ((x j : Nat) : ZMod 3))
         (∀ i, inputs i ∈ ({0, 1} : Set (ZMod 3))) →
         P.eval (fun j ↦ ((x j : Nat) : ZMod 3)) = (op.func (fun i ↦ if inputs i = 1 then 1 else 0) : Nat) := by
-          revert polys op hop;
-          simp
-          by_cases hℓ : ℓ = 0;
-          · intro op hop polys;
-            refine' ⟨ 0, _, Set.univ, _, _ ⟩ <;> aesop;
-          · intro op hop polys;
-            rcases AC₀_GateOps_cases hop with ( rfl | rfl | ⟨ n, rfl ⟩ );
-            · refine' ⟨ 1, _, ∅, _, _ ⟩ <;> norm_num;
-            · refine' ⟨ 1 - polys 0, _, ∅, _, _ ⟩ <;> norm_num;
-              · refine' le_trans ( MvPolynomial.totalDegree_sub _ _ ) _ ; norm_num;
-                exact le_mul_of_one_le_left ( Nat.zero_le _ ) ( by linarith [ Nat.pos_of_ne_zero hℓ ] );
-              · intro x hx; specialize hx 0; aesop;
-            · obtain ⟨ P, hP₁, hP₂ ⟩ := exists_good_approxAnd _ _ ℓ polys;
-              refine' ⟨ P, hP₁, { x : Fin _ → Fin 2 | ¬ ( MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) P ) = ∏ k : Fin n, ( MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) ( polys k ) ) ^ 2 }, _, _ ⟩ <;> simp_all +decide [ Set.ncard_eq_toFinset_card' ];
-              · rw [ Finset.filter_not, Finset.card_sdiff ] at * ; norm_num at *;
-                rw [ Nat.cast_sub ( show _ ≤ _ from le_trans ( Finset.card_le_univ _ ) ( by norm_num ) ) ] ; norm_num at * ; linarith;
-              · intro x hx₁ hx₂; rw [ Finset.prod_congr rfl fun i _ => by rw [ show ( MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) ( polys i ) ) ^ 2 = if ( MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) ( polys i ) ) = 1 then 1 else 0 from by rcases hx₂ i with h | h <;> simp +decide [ h ] ] ] ; simp +decide [ Finset.prod_ite ] ;
-                cases h : Finset.card ( Finset.filter ( fun i => ¬ ( MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) ( polys i ) ) = 1 ) Finset.univ ) <;> simp
+  revert polys op hop;
+  simp
+  by_cases hℓ : ℓ = 0;
+  · intro op hop polys;
+    refine' ⟨ 0, _, Set.univ, _, _ ⟩ <;> aesop;
+  · intro op hop polys;
+    rcases AC₀_GateOps_cases hop with ( rfl | rfl | ⟨ n, rfl ⟩ );
+    · refine' ⟨ 1, _, ∅, _, _ ⟩ <;> norm_num;
+    · refine' ⟨ 1 - polys 0, _, ∅, _, _ ⟩ <;> norm_num;
+      · refine' le_trans ( MvPolynomial.totalDegree_sub _ _ ) _ ; norm_num;
+        exact le_mul_of_one_le_left ( Nat.zero_le _ ) ( by linarith [ Nat.pos_of_ne_zero hℓ ] );
+      · intro x hx; specialize hx 0; aesop;
+    · obtain ⟨ P, hP₁, hP₂ ⟩ := exists_good_approxAnd _ _ ℓ polys;
+      use P, hP₁
+      refine' ⟨ { x : Fin _ → Fin 2 | ¬ ( MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) P = ∏ i, ( 1 - ( 1 - MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) ( polys i ) ) ^ 2 ) ) }, _, _ ⟩ <;> norm_num;
+      · norm_num [ Set.ncard_eq_toFinset_card' ] at *;
+        rw [ Finset.filter_not, Finset.card_sdiff ] at * ; norm_num at *;
+        rw [ Nat.cast_sub ] <;> norm_num at * ; linarith! [ inv_pos.mpr ( pow_pos ( zero_lt_two' ℚ ) ℓ ) ] ;
+        exact le_trans ( Finset.card_le_univ _ ) ( by norm_num );
+      · intro x hx₁ hx₂; rw [ hx₁ ] ;
+        rw [ Finset.prod_congr rfl fun i hi => ?_ ];
+        any_goals exact fun i => if ( MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) ( polys i ) ) = 1 then 1 else 0;
+        · norm_num [ Finset.prod_ite ];
+          cases h : Finset.card ( Finset.filter ( fun i => ¬MvPolynomial.eval ( fun j => ( x j : ZMod 3 ) ) ( polys i ) = 1 ) Finset.univ ) <;> simp_all +decide;
+        · grind
 
 lemma ncard_union_bound {α ι : Type*} [Finite ι] [Finite α] (S : ι → Set α) (B : ℚ)
     (h : ∀ i, (S i).ncard ≤ B) :
@@ -396,8 +405,8 @@ lemma exists_poly_approx_step {n ℓ : ℕ}
         intro u
         apply exists_poly_for_gate
         apply h_gates d u;
-  choose P Bad hP hBad using h_poly_for_gate;
-  refine' ⟨ P, _, BadSet_d ∪ ⋃ u, Bad u, _, _ ⟩;
+  choose P Bad hP hBad using h_poly_for_gate
+  refine ⟨P, ?_, BadSet_d ∪ ⋃ u, Bad u, ?_, ?_⟩
   · intro u; specialize hP u; specialize hBad u; simp_all +decide [ pow_succ' ] ;
     refine' le_trans hP _;
     gcongr;
@@ -417,11 +426,13 @@ lemma exists_poly_approx_step {n ℓ : ℕ}
     · congr! 2;
       congr! 2;
       specialize h_eval x hx.1 ( ( circ.gates d u ).inputs ‹_› );
-      split_ifs <;> simp_all +decide [ ← h_eval ];
+      split_ifs <;> simp_all [ ← h_eval ];
       · exact Fin.ext ( by erw [ ZMod.natCast_eq_natCast_iff ] at *; norm_num [ Nat.ModEq ] at *; omega );
       · exact Fin.ext ( by have := Fin.is_lt ( circ.evalNode ( ( circ.gates d u ).inputs ‹_› ) x ) ; interval_cases ( circ.evalNode ( ( circ.gates d u ).inputs ‹_› ) x : ℕ ) <;> trivial );
-    · intro i; specialize h_eval x hx.1 ( circ.gates d u |>.inputs i ) ;
-      rw [ ← h_eval ] ; have := Fin.exists_fin_two.mp ⟨ circ.evalNode ( circ.gates d u |>.inputs i ) x, rfl ⟩ ; aesop;
+    · intro i
+      rw [← h_eval x hx.1 ( circ.gates d u |>.inputs i )]
+      cases Fin.exists_fin_two.mp ⟨circ.evalNode ( circ.gates d u |>.inputs i ) x, rfl⟩
+      <;> simp [*]
 
 lemma exists_poly_approx_base {n ℓ : ℕ}
     (circ : FeedForward (Fin 2) (Fin n) (Fin 1)) :
@@ -449,10 +460,10 @@ theorem exists_poly_approx_of_layer {n ℓ : ℕ}
       (∀ x, x ∉ BadSet → ∀ u, ((circ.evalNode u x : Nat) : ZMod 3) = (Polys u).eval (fun j ↦ ((x j : Nat) : ZMod 3))) := by
   all_goals generalize_proofs at *;
   field_simp;
-  induction i using Fin.inductionOn <;> simp_all +decide [ Fin.sum_univ_castSucc ];
+  induction i using Fin.inductionOn <;> simp_all [ Fin.sum_univ_castSucc ];
   · refine' ⟨ _, _, _ ⟩;
     exact fun u => MvPolynomial.X ( cast circ.nodes_zero u );
-    · exact fun u => by simp +decide [ MvPolynomial.totalDegree_X ] ;
+    · exact fun u => by simp [ MvPolynomial.totalDegree_X ] ;
     · refine' ⟨ ∅, _, _ ⟩ <;> aesop;
   · rename_i i hi;
     specialize hi fun k => by
@@ -649,20 +660,377 @@ theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial 
   norm_cast;
   rw [ Int.subNatNat_eq_coe ] ; push_cast ; linarith [ hℓ₀ n, pow_succ' 2 ( ℓ₀ n ) ]
 
+/-
+If we substitute polynomials of total degree at most 1 into a multivariate polynomial P, the total degree of the resulting polynomial is at most the total degree of P.
+-/
+lemma totalDegree_aeval_linear {n : ℕ} {R : Type*} [CommRing R]
+    (f : Fin n → MvPolynomial (Fin n) R) (P : MvPolynomial (Fin n) R)
+    (h : ∀ i, (f i).totalDegree ≤ 1) :
+    (MvPolynomial.aeval f P).totalDegree ≤ P.totalDegree := by
+  rw [ MvPolynomial.aeval_def, ];
+  rw [ MvPolynomial.eval₂_eq' ];
+  -- Apply the lemma that the degree of a sum is less than or equal to the maximum degree of the terms.
+  have h_deg_sum : ∀ d ∈ P.support, MvPolynomial.totalDegree (∏ i, f i ^ (d i)) ≤ ∑ i, (f i).totalDegree * (d i) := by
+    -- The total degree of a product of polynomials is the sum of their total degrees.
+    have h_total_degree_prod : ∀ (s : Finset (Fin n)) (f : Fin n → MvPolynomial (Fin n) R), MvPolynomial.totalDegree (∏ i ∈ s, f i) ≤ ∑ i ∈ s, MvPolynomial.totalDegree (f i) := by
+      exact fun s f ↦ MvPolynomial.totalDegree_finset_prod s fun i ↦ f i;
+    exact fun d hd => le_trans ( h_total_degree_prod Finset.univ fun i => f i ^ ( d i ) ) ( Finset.sum_le_sum fun i _ => by simpa [ mul_comm ] using MvPolynomial.totalDegree_pow ( f i ) ( d i ) );
+  -- Apply the lemma that the degree of a sum is less than or equal to the maximum degree of the terms to conclude the proof.
+  have h_deg_sum_le : ∀ d ∈ P.support, MvPolynomial.totalDegree (MvPolynomial.C (MvPolynomial.coeff d P) * ∏ i, f i ^ (d i)) ≤ MvPolynomial.totalDegree P := by
+    intro d hd
+    have h_deg_term : MvPolynomial.totalDegree (MvPolynomial.C (MvPolynomial.coeff d P) * ∏ i, f i ^ (d i)) ≤ ∑ i, (f i).totalDegree * (d i) := by
+      exact le_trans ( MvPolynomial.totalDegree_mul _ _ ) ( by aesop );
+    refine' le_trans h_deg_term _;
+    refine' le_trans _ ( Finset.le_sup hd );
+    exact le_trans ( Finset.sum_le_sum fun _ _ => Nat.mul_le_mul_right _ ( h _ ) ) ( by simp +decide [ Finsupp.sum_fintype ] );
+  exact MvPolynomial.totalDegree_finsetSum_le h_deg_sum_le
+
+/-
+The product of (2x_i - 1) is equal to (-1)^n * (1 - 2 * parity(x)).
+Proof:
+(2x - 1) is -1 if x=0, and 1 if x=1.
+So the product is (-1)^(number of zeros).
+Number of zeros = n - number of ones.
+So product = (-1)^(n - number of ones) = (-1)^n * (-1)^(number of ones).
+(-1)^(number of ones) is 1 if number of ones is even, -1 if odd.
+This is exactly (1 - 2 * parity).
+If parity is 0, 1 - 0 = 1.
+If parity is 1, 1 - 2 = -1.
+-/
+lemma parity_prod_identity {n : ℕ} (x : Fin n → Fin 2) :
+    ∏ i, (2 * (x i : ZMod 3) - 1) = (-1)^n * (1 - 2 * ((∑ i, x i : Fin 2).val : ZMod 3)) := by
+  induction n
+  · simp
+  rename_i n ih
+  simp [ih, Fin.sum_univ_succ, Fin.prod_univ_succ]
+  rcases Fin.exists_fin_two.mp ⟨ ∑ i : Fin n, x i.succ, rfl ⟩ with hxs | hxs
+  · simp [hxs]
+    ring_nf
+  · simp only [hxs]
+    rcases Fin.exists_fin_two.mp ⟨x 0, rfl⟩ with hx0 | hx0
+    · simp [hx0]; ring
+    · simp [hx0]; ring
+
+/-
+The total degree of a polynomial is invariant under the affine transformation $x_i \mapsto -x_i - 1$ over ZMod 3.
+-/
+lemma totalDegree_affine_transform {n : ℕ} (P : MvPolynomial (Fin n) (ZMod 3)) :
+    MvPolynomial.totalDegree (MvPolynomial.aeval (fun i ↦ -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P) = MvPolynomial.totalDegree P := by
+  refine le_antisymm ( totalDegree_aeval_linear _ _ ?_ ) ?_;
+  · norm_num [ MvPolynomial.totalDegree ];
+    intro i b hb
+    contrapose! hb
+    erw [ MvPolynomial.coeff_X', MvPolynomial.coeff_one ] at *
+    aesop
+  · convert totalDegree_aeval_linear (fun i => -MvPolynomial.X i - 1) _ _ using 1;
+    · convert rfl;
+      induction P using MvPolynomial.induction_on <;> aesop
+    · intro i
+      norm_num [ MvPolynomial.totalDegree ]
+      intro b hb
+      erw [ MvPolynomial.coeff_X', MvPolynomial.coeff_one ] at hb
+      aesop
+
 /-- We'll show that parity cannot be computed by a low-degree polymomial mod 3. First,
 if we had a low-degree polynomial that computed parity on bits, then this yields a
-polynomial of equal degree that computes the products on {-1, 1} (at exactly as many
+polynomial of equal degree that computes the products on {-1, 1} (at at least as many
 places as we compute parity correctly). -/
 theorem parity_implies_product_mod3 (n : ℕ) (P : MvPolynomial (Fin n) (ZMod 3)) :
     ∃ Q : MvPolynomial (Fin n) (ZMod 3),
       Q.totalDegree = P.totalDegree ∧
       ∀ x : Fin n → Fin 2,
-        P.eval (fun i ↦ (x i : ZMod 3)) = ∑ i, x i
-        ↔
+        P.eval (fun i ↦ (x i : ZMod 3)) = (∑ i, x i : Fin 2).val
+        →
         Q.eval (fun i ↦ (2 * (x i).val - 1 : ZMod 3)) = ∏ i, (2 * (x i).val - 1 : ZMod 3)
        := by
-  -- use P(x₁ - 1, x₂ - 1, ... ) + 1
-  sorry
+  -- Let's define the polynomial Q as (-1)^n * (1 - 2 * aeval (fun i => -X i - 1) P).
+  use (-1 : MvPolynomial (Fin n) (ZMod 3))^n * (1 - 2 * MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P);
+  -- The total degree of Q is the same as the total degree of P because multiplying by constants and adding constants doesn't change the total degree.
+  have h_total_degree1 : ∀ (c : ZMod 3) (P : MvPolynomial (Fin n) (ZMod 3)), c ≠ 0 → (MvPolynomial.totalDegree (MvPolynomial.C c * P)) = (MvPolynomial.totalDegree P) := by
+        intro c P hc
+        simp only [MvPolynomial.totalDegree]
+        congr 1
+        ext b
+        fin_cases c
+        · simp at hc
+        · simp
+        · simp
+          grind
+  have h_total_degree : (MvPolynomial.totalDegree ((-1 : MvPolynomial (Fin n) (ZMod 3))^n * (1 - 2 * MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P))) = (MvPolynomial.totalDegree P) := by
+    have h_total_degree : (MvPolynomial.totalDegree ((-1 : MvPolynomial (Fin n) (ZMod 3))^n * (1 - 2 * MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P))) = (MvPolynomial.totalDegree (1 - 2 * MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P)) := by
+      convert h_total_degree1 ((-1) ^ n) _ _ using 1
+      · norm_num [ pow_succ' ]
+      · simp
+    have h_total_degree : (MvPolynomial.totalDegree (1 - 2 * MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P)) = (MvPolynomial.totalDegree (MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P)) := by
+      have h_deg2 : (MvPolynomial.totalDegree (2 * MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P)) = (MvPolynomial.totalDegree (MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P)) := by
+        exact h_total_degree1 2 ( MvPolynomial.aeval ( fun i => -MvPolynomial.X i - 1 ) P ) ( by decide )
+      -- The total degree of a polynomial is the maximum degree of its monomials. Adding a constant term (which has degree 0) shouldn't change the maximum degree.
+      have h_total_degree : ∀ (P : MvPolynomial (Fin n) (ZMod 3)), (MvPolynomial.totalDegree (1 - P)) ≤ (MvPolynomial.totalDegree P) := by
+        intro P
+        grw [MvPolynomial.totalDegree_sub]
+        simp
+      apply le_antisymm;
+      · grw [h_total_degree, h_deg2]
+      · have := h_total_degree ( 1 - 2 * ( MvPolynomial.aeval ( fun i => -MvPolynomial.X i - 1 ) P ) )
+        rwa [sub_sub_cancel, h_deg2] at this
+    have h_total_degree : (MvPolynomial.totalDegree (MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P)) = (MvPolynomial.totalDegree P) := by
+      exact totalDegree_affine_transform P;
+    linarith
+  refine ⟨h_total_degree, fun x hx ↦ ?_⟩
+  -- Substitute $y_i = 2x_i - 1$ into the polynomial $Q$.
+  have h_subst : MvPolynomial.eval (fun i => (2 * (x i : ZMod 3) - 1 : ZMod 3)) ((-1 : MvPolynomial (Fin n) (ZMod 3))^n * (1 - 2 * MvPolynomial.aeval (fun i => -MvPolynomial.X i - (1 : MvPolynomial (Fin n) (ZMod 3))) P)) =
+                 (-1 : ZMod 3)^n * (1 - 2 * MvPolynomial.eval (fun i => (- (2 * (x i : ZMod 3) - 1) - 1 : ZMod 3)) P) := by
+                   simp [ MvPolynomial.aeval_def, MvPolynomial.eval₂_eq' ];
+                   simp [ MvPolynomial.eval_eq' ];
+  -- Simplify the expression inside the evaluation.
+  have h_simplify : MvPolynomial.eval (fun i => (- (2 * (x i : ZMod 3) - 1) - 1 : ZMod 3)) P = MvPolynomial.eval (fun i => (x i : ZMod 3)) P := by
+    exact congr_arg ( fun f => MvPolynomial.eval f P ) ( funext fun i => by have := Fin.is_lt ( x i ) ; interval_cases ( x i : ℕ ) <;> trivial );
+  simp_all [ parity_prod_identity ]
+
+/--
+For any polynomial P, there exists a multilinear polynomial Q of at most the same total degree that agrees with P on the set S (where coordinates are ±1).
+Proof idea: Replace any factor x_i^2 with 1. This operation preserves the value on S (since x_i^2 = 1 on S) and does not increase the degree (since 2 -> 0). Repeat until all exponents are <= 1.
+Formally, we can use induction on the maximum degree of any variable in the polynomial, or just structural induction on monomials. Since we are in a finite variable setting, this terminates.
+-/
+lemma exists_multilinear_rep {n : ℕ} (S : Set (Fin n → ZMod 3))
+    (h_subset : ∀ x ∈ S, ∀ i, (x i)^2 = 1)
+    (P : MvPolynomial (Fin n) (ZMod 3)) :
+    ∃ Q : MvPolynomial (Fin n) (ZMod 3),
+      Q.totalDegree ≤ P.totalDegree ∧
+      (∀ m ∈ Q.support, ∀ i, (m i) ≤ 1) ∧
+      ∀ x ∈ S, P.eval x = Q.eval x := by
+  -- To prove the reduction, it suffices to show that for any monomial $m$ with total degree $d$, there exists a multilinear polynomial $Q$ of total degree at most $d$ that agree with $m$ on $S$.
+  suffices h_monomial : ∀ (m : Fin n →₀ ℕ), ∃ Q : (MvPolynomial (Fin n) (ZMod 3)),
+      ((MvPolynomial.totalDegree Q) ≤ (m.sum fun i n => n)) ∧
+      (∀ n ∈ Q.support, (∀ i, (n i) ≤ 1)) ∧
+      (∀ x ∈ S, (MvPolynomial.eval x (MvPolynomial.monomial m 1)) = (MvPolynomial.eval x Q)) by
+    choose! Q hQ₁ hQ₂ hQ₃ using h_monomial;
+    refine ⟨∑ m ∈ P.support, P.coeff m • Q m, ?_, ?_, ?_⟩
+    · simp [ MvPolynomial.totalDegree ] at *
+      intro m hm
+      contrapose! hm
+      simp [MvPolynomial.coeff_sum, MvPolynomial.coeff_smul]
+      refine Finset.sum_eq_zero fun x hx ↦ ?_
+      apply mul_eq_zero_of_right _
+      contrapose! hm
+      exact (hQ₁ _ _ hm).trans (Finset.le_sup (f := fun s ↦ s.sum fun _ ↦ id) hx)
+    · simp [MvPolynomial.coeff_sum] at hQ₂ ⊢
+      intro m hm i
+      obtain ⟨x, ⟨hx₁, hx₂⟩⟩ := Finset.exists_ne_zero_of_sum_ne_zero hm
+      apply hQ₂ x m
+      contrapose! hx₂
+      simp only [hx₂, mul_zero]
+    · simp at *
+      intro x hx
+      rw [MvPolynomial.eval_eq'];
+      congr! with m hm
+      rw [← hQ₃ m x hx]
+      simp [MvPolynomial.eval_monomial]
+  intro m;
+  -- We can replace each exponent $n_i$ in $m$ with $n_i \mod 2$, which preserves the value on $S$.
+  use MvPolynomial.monomial (m.mapRange (fun n => n % 2) (by simp)) 1
+  generalize_proofs at *;
+  simp [ MvPolynomial.eval_monomial ];
+  refine ⟨?_, ?_, ?_⟩
+  · simp [ Finsupp.sum ];
+    exact Finset.sum_le_sum_of_subset ( show ( Finsupp.mapRange ( fun n => n % 2 ) ‹_› m |> Finsupp.support ) ⊆ m.support from fun x hx => by aesop ) |> le_trans <| Finset.sum_le_sum fun i hi => Nat.mod_le _ _;
+  · exact fun i => Nat.le_of_lt_succ (Nat.mod_lt _ (by decide))
+  · intro x hx
+    congr! 1
+    rw [← Nat.mod_add_div (m _) 2]
+    simp [pow_add, pow_mul, h_subset x hx]
+
+/--
+The number of multilinear monomials (exponents $\le 1$) of degree at most $k$ in $n$ variables is $\sum_{i=0}^k \binom{n}{i}$.
+Proof idea: There is a bijection between such monomials and subsets of variables of size at most $k$. The monomial $x^S$ corresponds to the set $S$. The number of subsets of size $i$ is $\binom{n}{i}$. Summing over $i \le k$ gives the result.
+-/
+lemma card_multilinear_monomials_le (n k : ℕ) :
+    { m : Fin n →₀ ℕ | (∀ i, m i ≤ 1) ∧ m.support.card ≤ k }.ncard = ∑ i ∈ range (k + 1), Nat.choose n i := by
+  -- The set of monomials of degree at most $k$ is in bijection with the set of subsets of $\{0, 1, ..., n-1\}$ with size at most $k$.
+  have h_bij : {m : Fin n →₀ ℕ | (∀ i, m i ≤ 1) ∧ m.support.card ≤ k} = Finset.image (fun s : Finset (Fin n) => ∑ i ∈ s, Finsupp.single i 1) (Finset.filter (fun s => s.card ≤ k) (Finset.powerset (Finset.univ : Finset (Fin n)))) := by
+    ext m;
+    constructor;
+    · simp +zetaDelta at *;
+      intro hm hk;
+      refine' ⟨ m.support, hk, Finsupp.ext fun i => _ ⟩;
+      by_cases hi : i ∈ m.support <;> simp_all [ Finsupp.single_apply ];
+      exact Eq.symm ( le_antisymm ( hm i ) ( Nat.pos_of_ne_zero hi ) );
+    · norm_num +zetaDelta at *;
+      rintro x hx rfl;
+      simp [ Finsupp.single_apply, Finset.sum_apply' ];
+      erw [ show ( ∑ i ∈ x, Finsupp.single i 1 : Fin n →₀ ℕ ).support = x from ?_ ];
+      · exact ⟨ fun i => by split_ifs <;> norm_num, hx ⟩;
+      · ext i; simp [ Finsupp.single_apply, Finset.sum_apply' ] ;
+  rw [ h_bij, Set.ncard_coe_finset, Finset.card_image_of_injective ];
+  · rw [ show Finset.filter ( fun s => Finset.card s ≤ k ) ( Finset.powerset ( Finset.univ : Finset ( Fin n ) ) ) = Finset.biUnion ( Finset.range ( k + 1 ) ) fun i => Finset.powersetCard i ( Finset.univ : Finset ( Fin n ) ) from ?_, Finset.card_biUnion ];
+    · simp [ Finset.card_univ ];
+    · exact fun i hi j hj hij => Finset.disjoint_left.mpr fun x hx₁ hx₂ => hij <| by rw [ Finset.mem_powersetCard ] at hx₁ hx₂; aesop;
+    · ext; simp [Finset.mem_biUnion, Finset.mem_powersetCard];
+      rw [ Nat.lt_succ_iff ];
+  · intro s t h; ext x; replace h := congr_arg ( fun m => m x ) h; simp_all [ Finsupp.single_apply ] ;
+    split_ifs at h <;> tauto
+
+/--
+The set of multilinear exponents (maps from Fin n to Nat with values <= 1) with support size at most k is finite.
+Proof: It is a subset of the set of all maps from Fin n to {0, 1}, which is finite.
+-/
+lemma finite_multilinear_exponents (n k : ℕ) :
+    { m : Fin n →₀ ℕ | (∀ i, m i ≤ 1) ∧ m.support.card ≤ k }.Finite := by
+  have h_finite_support : ∀ m : Fin n →₀ ℕ, (∀ i, m i ≤ 1) ∧ (m.support : Finset (Fin n)).card ≤ k → m ∈ Set.image (fun s : Finset (Fin n) => s.sum fun x => Finsupp.single x 1) (Finset.powersetCard k (Finset.univ : Finset (Fin n))) ∪ ⋃ i < k, Set.image (fun s : Finset (Fin n) => s.sum fun x => Finsupp.single x 1) (Finset.powersetCard i (Finset.univ : Finset (Fin n))) := by
+    intro m hm;
+    have h_support_card : m.support.card ≤ k := by
+      exact hm.2;
+    have h_support_top : m = Finset.sum m.support fun i => Finsupp.single i (m i) := by
+      ext i; by_cases hi : i ∈ m.support <;> simp_all [ Finsupp.single_apply ] ;
+    have h_support_top : m = Finset.sum m.support fun i => Finsupp.single i 1 := by
+      exact h_support_top.trans ( Finset.sum_congr rfl fun i hi => by rw [ show m i = 1 by linarith [ hm.1 i, show m i > 0 from Nat.pos_of_ne_zero ( by simpa using hi ) ] ] );
+    rcases h_support_card.eq_or_lt with h | h
+    · simp at h_support_top ⊢
+      exact Or.inl ⟨m.support, h, h_support_top.symm⟩
+    · simp at h_support_top ⊢
+      exact Or.inr ⟨_, h, _, rfl, h_support_top.symm⟩
+  refine Set.Finite.subset ( Set.Finite.union ( Set.Finite.image _ <| Set.toFinite _ ) <| Set.Finite.biUnion ( Set.finite_lt_nat k ) fun i hi => Set.Finite.image _ <| Set.toFinite _ ) fun m hm => h_finite_support m hm
+
+lemma card_le_of_polynomial_span {n : ℕ} (S : Set (Fin n → ZMod 3)) (k : ℕ)
+    (h_subset : ∀ x ∈ S, ∀ i, (x i)^2 = 1)
+    (h_span : ∀ f : S → ZMod 3, ∃ P : MvPolynomial (Fin n) (ZMod 3),
+      P.totalDegree ≤ k ∧ ∀ x (hx : x ∈ S), P.eval x = f ⟨x, hx⟩) :
+    S.ncard ≤ ∑ i ∈ range (k + 1), Nat.choose n i := by
+  open MvPolynomial in
+  -- Let `ExponentsSet` be `{ m : Fin n →₀ ℕ | (∀ i, m i ≤ 1) ∧ m.support.card ≤ k }`.
+  set ExponentsSet : Set (Fin n →₀ ℕ) := { m : Fin n →₀ ℕ | (∀ i, m i ≤ 1) ∧ m.support.card ≤ k };
+  -- By `finite_multilinear_exponents`, this set is finite, so let `Exponents` be its `toFinset`.
+  obtain ⟨Exponents, hExponents⟩ : ∃ Exponents : Finset (Fin n →₀ ℕ), Exponents.toSet = ExponentsSet ∧ Exponents.card = ∑ i ∈ Finset.range (k + 1), Nat.choose n i := by
+    have h_finset : Set.Finite ExponentsSet ∧ ExponentsSet.ncard = ∑ i ∈ Finset.range (k + 1), Nat.choose n i := by
+      exact ⟨ finite_multilinear_exponents n k, card_multilinear_monomials_le n k ⟩;
+    exact ⟨ h_finset.1.toFinset, by simp, by simpa [ ← Set.ncard_coe_finset ] using h_finset.2 ⟩;
+  -- Let `Monomials` be the image of `Exponents` under `fun m => (fun (x : Fin n → ZMod 3) => (monomial m 1).eval x)`.
+  set Monomials : Finset ((Fin n → ZMod 3) → ZMod 3) := Exponents.image (fun m => fun x : Fin n → ZMod 3 => (monomial m 1 : MvPolynomial (Fin n) (ZMod 3)).eval x);
+  -- Apply `card_le_of_span_finite_field` with `B = Monomials`.
+  have h_card_le : S.ncard ≤ Monomials.card := by
+    have h_span_Monomials : ∀ f : S → ZMod 3, ∃ c : {b // b ∈ Monomials} → ZMod 3, ∀ x : S, f x = ∑ b : {b // b ∈ Monomials}, c b * b.val x.val := by
+      intro f
+      obtain ⟨P, hP_deg, hP_agree⟩ := h_span f
+      obtain ⟨Q, hQ_deg, hQ_multilinear, hQ_agree⟩ := exists_multilinear_rep S h_subset P;
+      -- Since `Q` is a sum of terms `c_m * monomial m 1`, and `m` is in `Exponents`, we can write `Q` as a linear combination of the monomials in `Monomials`.
+      obtain ⟨ c, hc ⟩ : ∃ c : {b : Fin n →₀ ℕ // b ∈ Exponents} → ZMod 3, ∀ x : Fin n → ZMod 3, Q.eval x = ∑ b : {b : Fin n →₀ ℕ // b ∈ Exponents}, c b * (monomial b.val 1 : MvPolynomial (Fin n) (ZMod 3)).eval x := by
+        have hQ_linear_combination : Q = ∑ m ∈ Q.support, Q.coeff m • (monomial m 1 : MvPolynomial (Fin n) (ZMod 3)) := by
+          conv_lhs => rw [ Q.as_sum ] ;
+          simp [ MvPolynomial.monomial_eq, Algebra.smul_def ];
+        have hQ_support_subset_Exponents : Q.support ⊆ Exponents := by
+          intro m hm; specialize hQ_multilinear m hm; replace hExponents := Set.ext_iff.mp hExponents.1 m; simp at hExponents ⊢;
+          refine hExponents.mpr ⟨ hQ_multilinear, ?_ ⟩;
+          grw [← hP_deg, ← hQ_deg]
+          refine le_trans ?_ (Finset.le_sup hm)
+          exact Finset.card_eq_sum_ones _ ▸ Finset.sum_le_sum fun i hi => Nat.one_le_iff_ne_zero.mpr <| by simpa using hi;
+        refine' ⟨ fun m => if hm : m.val ∈ Q.support then Q.coeff m.val else 0, fun x => _ ⟩;
+        conv_lhs => rw [ hQ_linear_combination ];
+        simp [Finset.sum_ite]
+        apply Finset.sum_bij ( fun m hm => ⟨ m, hQ_support_subset_Exponents hm ⟩ ) _ _ _ _
+        · simp
+        · simp
+        · simp
+        · simp
+      use fun b => ∑ a : { b : Fin n →₀ ℕ // b ∈ Exponents }, if b.val = fun x => (MvPolynomial.eval x : MvPolynomial (Fin n) (ZMod 3) → ZMod 3) ((MvPolynomial.monomial (↑a : Fin n →₀ ℕ) : ZMod 3 → MvPolynomial (Fin n) (ZMod 3)) 1) then c a else 0;
+      simp [Finset.sum_ite]
+      intro x hx
+      rw [ ← hP_agree x hx, hQ_agree x hx ]
+      simp [ hc, Finset.sum_mul]
+      rw [ Finset.sum_sigma' ];
+      refine' Finset.sum_bij ( fun b _ => ⟨ ⟨ _, Finset.mem_image_of_mem _ b.2 ⟩, b ⟩ ) _ _ _ _ <;> simp +decide;
+      rintro ⟨ ⟨ b, hb ⟩, ⟨ a, ha ⟩ ⟩ h; use a; aesop;
+    rcases S.finite_or_infinite with hS | hS
+    · have h_card_le : (Nat.card S : ℕ) ≤ Monomials.card := by
+        have h_surj : Function.Surjective (fun c : {b // b ∈ Monomials} → ZMod 3 => fun x : S => ∑ b : {b // b ∈ Monomials}, c b * b.val x.val) := by
+          exact fun f => by obtain ⟨ c, hc ⟩ := h_span_Monomials f; exact ⟨ c, funext fun x => hc x ▸ rfl ⟩ ;
+        open Classical in
+        have := Fintype.card_le_of_surjective ( fun c : { b : ( Fin n → ZMod 3 ) → ZMod 3 // b ∈ Monomials } → ZMod 3 => fun x : S => ∑ b : { b : ( Fin n → ZMod 3 ) → ZMod 3 // b ∈ Monomials }, c b * ( b : ( Fin n → ZMod 3 ) → ZMod 3 ) x.val ) h_surj;
+        simp [Fintype.card_pi] at this ⊢
+        contrapose! this
+        exact pow_lt_pow_right₀ (by decide) this
+      exact h_card_le
+    · simp [hS, Set.ncard_def]
+  grw [h_card_le, Finset.card_image_le, hExponents.2]
+
+open MvPolynomial in
+lemma multilinear_monomial_reduction {n : ℕ} (Q : MvPolynomial (Fin n) (ZMod 3))
+    (S : Set (Fin n → ZMod 3))
+    (h_subset : ∀ x ∈ S, ∀ i, (x i)^2 = 1)
+    (h_approx : ∀ x ∈ S, Q.eval x = ∏ i, x i)
+    (m : Fin n →₀ ℕ) (hm : ∀ i, m i ≤ 1) :
+    ∃ P : MvPolynomial (Fin n) (ZMod 3),
+      P.totalDegree ≤ n / 2 + Q.totalDegree ∧ ∀ x ∈ S, P.eval x = (monomial m 1).eval x := by
+  by_cases h_case1 : Finset.card (m.support) ≤ n / 2;
+  · refine' ⟨ MvPolynomial.monomial m 1, _, _ ⟩ <;> simp_all [ MvPolynomial.totalDegree_monomial ];
+    refine' le_trans _ ( Nat.le_add_right _ _ );
+    exact le_trans ( Finset.sum_le_sum fun i hi => hm i ) ( by simpa using h_case1 );
+  · -- Since $|A| > n/2$, we have $|B| = n - |A| < n/2$.
+    have h_card_B : (Finset.card (Finset.univ \ m.support)) ≤ n / 2 := by
+      simp_all [ Finset.card_sdiff ];
+      omega;
+    refine' ⟨ Q * MvPolynomial.monomial ( ∑ i ∈ Finset.univ \ m.support, Finsupp.single i 1 ) 1, _, _ ⟩;
+    · grw [MvPolynomial.totalDegree_mul]
+      simp [MvPolynomial.totalDegree_monomial ];
+      rw [ add_comm, Finsupp.sum_sum_index' ] <;> simp_all
+    · intro x hx
+      simp [hx, h_approx, MvPolynomial.eval_monomial, ← Finset.prod_mul_distrib, Finsupp.single_apply]
+      congr! 1 with i
+      specialize hm i
+      interval_cases m i <;> simp_all [pow_succ']
+
+lemma exists_poly_rep {n : ℕ} (f : (Fin n → ZMod 3) → ZMod 3) :
+    ∃ P : MvPolynomial (Fin n) (ZMod 3), ∀ x, P.eval x = f x := by
+  -- The polynomial P can be constructed as the sum over all a of f(a) multiplied by the product of (X_i - C(a_i))^2 terms. This polynomial P will evaluate to f(x) for all x.
+  have h_poly : ∃ P : MvPolynomial (Fin n) (ZMod 3), (∀ x : (Fin n → ZMod 3), MvPolynomial.eval x P = ∑ a : (Fin n → ZMod 3), f a * ∏ i, (1 - (x i - a i)^2)) := by
+    exact ⟨ ∑ a : ( Fin n → ZMod 3 ), MvPolynomial.C ( f a ) * ∏ i : Fin n, ( 1 - ( MvPolynomial.X i - MvPolynomial.C ( a i ) ) ^ 2 ), by aesop ⟩;
+  obtain ⟨ P, hP ⟩ := h_poly;
+  use P
+  intro x
+  rw [ hP x, Finset.sum_eq_single x _ (by simp)]
+  · simp
+  intro b _ hb_ne_x
+  obtain ⟨i, hi⟩ := Function.ne_iff.mp hb_ne_x
+  rw [Finset.prod_eq_zero ( Finset.mem_univ i )]
+  · simp
+  have : ∀ (y : ZMod 3), y ≠ 0 → y^2 = 1 := by decide
+  rw [this _ (sub_ne_zero_of_ne hi.symm), sub_self]
+
+lemma exists_low_degree_rep {n : ℕ} (Q : MvPolynomial (Fin n) (ZMod 3))
+    (S : Set (Fin n → ZMod 3))
+    (h_subset : ∀ x ∈ S, ∀ i, (x i)^2 = 1)
+    (h_approx : ∀ x ∈ S, Q.eval x = ∏ i, x i) :
+    ∀ f : S → ZMod 3, ∃ P : MvPolynomial (Fin n) (ZMod 3),
+      P.totalDegree ≤ n / 2 + Q.totalDegree ∧ ∀ x (hx : x ∈ S), P.eval x = f ⟨x, hx⟩ := by
+  intro f;
+  open MvPolynomial in
+  classical obtain ⟨ P1, hP1 ⟩ := exists_poly_rep ( fun x => if hx : x ∈ S then f ⟨ x, hx ⟩ else 0 );
+  -- By `exists_multilinear_rep`, there is a multilinear polynomial `P2` agreeing with `P1` on `S` (and thus with `f`), with `totalDegree P2 ≤ totalDegree P1`.
+  obtain ⟨ P2, hP2 ⟩ : ∃ P2 : MvPolynomial (Fin n) (ZMod 3), P2.totalDegree ≤ P1.totalDegree ∧ (∀ m ∈ P2.support, ∀ i, (m i) ≤ 1) ∧ ∀ x ∈ S, P2.eval x = P1.eval x := by
+    have := exists_multilinear_rep S h_subset P1;
+    exact ⟨ this.choose, this.choose_spec.1, this.choose_spec.2.1, fun x hx => this.choose_spec.2.2 x hx ▸ rfl ⟩;
+  -- For each monomial `m` in `P2`, by `multilinear_monomial_reduction`, there exists a polynomial `R_m` with `totalDegree R_m ≤ n/2 + totalDegree Q` such that `R_m` agrees with `monomial m 1` on `S`.
+  have h_reduction : ∀ m ∈ P2.support, ∃ R_m : MvPolynomial (Fin n) (ZMod 3), R_m.totalDegree ≤ n / 2 + Q.totalDegree ∧ ∀ x ∈ S, R_m.eval x = (monomial m 1).eval x := by
+    intros m hm;
+    exact multilinear_monomial_reduction Q S h_subset h_approx m fun i => hP2.2.1 m hm i;
+  choose! R hR using h_reduction;
+  refine ⟨ ∑ m ∈ P2.support, P2.coeff m • R m, ?_, ?_ ⟩
+  · simp_all
+    apply totalDegree_finsetSum_le
+    exact fun m hm => le_trans ( MvPolynomial.totalDegree_smul_le _ _ ) ( hR m ( by simpa using hm ) |>.1 );
+  · simp_all
+    intro x hx
+    rw [ ← hP2.2.2 x hx ]
+    simp [ MvPolynomial.eval_eq' ] ;
+    refine' Finset.sum_congr rfl fun m hm => _;
+    simp_all [ MvPolynomial.eval_eq' ]
+
+lemma card_le_of_approx_product {n : ℕ} (Q : MvPolynomial (Fin n) (ZMod 3))
+    (S : Set (Fin n → ZMod 3))
+    (h_subset : ∀ x ∈ S, ∀ i, (x i)^2 = 1)
+    (h_approx : ∀ x ∈ S, Q.eval x = ∏ i, x i) :
+    S.ncard ≤ ∑ i ∈ range (n / 2 + Q.totalDegree + 1), Nat.choose n i := by
+  have := @card_le_of_polynomial_span;
+  exact this S _ h_subset fun f => by simpa using exists_low_degree_rep Q S h_subset h_approx f;
 
 /-- The parity function is not well approximated by low-degree polynomials in 𝔽₃. -/
 theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (ZMod 3)),
@@ -675,10 +1043,54 @@ theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Z
     )
     := by
   --Theorem 6 in https://homes.cs.washington.edu/~anuprao/pubs/CSE531Winter12/lecture10.pdf
-  sorry
+  -- By contradiction, assume there exists such a sequence of polynomials $P_n$.
+  rintro ⟨P, hP⟩
+  obtain ⟨c, N, hc₁, hN⟩ := exists_constant_degree_bound
+  -- Since $d(n) = o(\sqrt{n})$, there exists $N' \ge N$ such that for all $n \ge N'$, $d(n) < c \sqrt{n}$.
+  obtain ⟨N', hN'⟩ : ∃ N' : ℕ, ∀ n ≥ N', (P n).totalDegree < c * Real.sqrt n := by
+    have := GrowthRate.polylog_is_littleO_sqrt hP.1;
+    rw [ Asymptotics.isLittleO_iff ] at this;
+    norm_num +zetaDelta at *;
+    exact Exists.elim ( this ( half_pos hc₁ ) ) fun N hN => ⟨ N + 1, fun n hn => lt_of_le_of_lt ( hN n ( by linarith ) ) ( by rw [ abs_of_nonneg ( Real.sqrt_nonneg _ ) ] ; nlinarith [ Real.sqrt_nonneg n, Real.sq_sqrt ( Nat.cast_nonneg n ), show ( n : ℝ ) ≥ N + 1 by exact_mod_cast hn ] ) ⟩;
+  -- By `parity_implies_product_mod3`, there exists $Q_n$ with $\deg(Q_n) = \deg(P_n) = d(n)$ such that $Q_n$ approximates the product of $\pm 1$ inputs on a set $S'$ of size $|S|$.
+  have hQ : ∀ n ≥ N', ∃ Q : MvPolynomial (Fin n) (ZMod 3),
+      Q.totalDegree = (P n).totalDegree ∧
+      (Finset.univ.filter (fun x : Fin n → Fin 2 => (Q.eval (fun i => (2 * (x i).val - 1 : ZMod 3)) = ∏ i, (2 * (x i).val - 1 : ZMod 3)))).card ≥ (2 / 3 : ℚ) * 2^n := by
+    intro n hn
+    obtain ⟨Q, hQ₁, hQ₂⟩ := parity_implies_product_mod3 n (P n);
+    use Q, hQ₁
+    refine le_trans ( hP.2 n ) ?_;
+    simp +zetaDelta at *;
+    refine' le_trans _ ( Finset.card_mono _ );
+    convert Set.ncard_coe_finset _ |> le_of_eq;
+    rotate_left;
+    exact Finset.univ.filter fun x => ( ∑ i, x i : Fin 2 ) = ( MvPolynomial.eval fun i => ( x i : ZMod 3 ) ) ( P n );
+    · intro x hx; specialize hQ₂ x; aesop;
+    · ext; simp +decide [ FuncFamily.PARITY ] ;
+  -- By `card_le_of_approx_product`, $|S'| \le \sum_{i=0}^{n/2+d(n)} \binom{n}{i}$.
+  have h_card_le : ∀ n ≥ N', ∀ Q : MvPolynomial (Fin n) (ZMod 3), Q.totalDegree = (P n).totalDegree → (Finset.univ.filter (fun x : Fin n → Fin 2 => (Q.eval (fun i => (2 * (x i).val - 1 : ZMod 3)) = ∏ i, (2 * (x i).val - 1 : ZMod 3)))).card ≤ ∑ i ∈ Finset.range (n / 2 + (P n).totalDegree + 1), (Nat.choose n i : ℝ) := by
+    intros n hn Q hQ_deg
+    have h_card_le : (Finset.univ.filter (fun x : Fin n → Fin 2 => (Q.eval (fun i => (2 * (x i).val - 1 : ZMod 3)) = ∏ i, (2 * (x i).val - 1 : ZMod 3)))).card ≤ ∑ i ∈ Finset.range (n / 2 + Q.totalDegree + 1), (Nat.choose n i : ℝ) := by
+      have h_card_le : ∀ S : Set (Fin n → ZMod 3), (∀ x ∈ S, ∀ i, (x i)^2 = 1) → (∀ x ∈ S, Q.eval x = ∏ i, x i) → S.ncard ≤ ∑ i ∈ Finset.range (n / 2 + Q.totalDegree + 1), (Nat.choose n i : ℝ) := by
+        intros S hS_subset hS_approx;
+        convert card_le_of_approx_product Q S hS_subset hS_approx using 1;
+        norm_cast;
+      convert h_card_le ( Set.image ( fun x : Fin n → Fin 2 => fun i => ( 2 * ( x i : ZMod 3 ) - 1 ) ) ( Finset.filter ( fun x : Fin n → Fin 2 => ( MvPolynomial.eval ( fun i => ( 2 * ( x i : ZMod 3 ) - 1 ) ) Q ) = ∏ i, ( 2 * ( x i : ZMod 3 ) - 1 ) ) Finset.univ ) ) _ _ using 1 <;> norm_num [ Set.ncard_eq_toFinset_card' ];
+      · rw [ Finset.card_image_of_injective ] ; norm_num [ Function.Injective ];
+        simp [ funext_iff, Fin.ext_iff ];
+        intro a₁ a₂ h x; have := h x; have := Fin.is_lt ( a₁ x ) ; have := Fin.is_lt ( a₂ x ) ; interval_cases ( a₁ x : ℕ ) <;> interval_cases ( a₂ x : ℕ ) <;> trivial;
+      · intro a ha i; rcases a i with ( _ | _ | a ) <;> norm_num ; tauto;
+    aesop;
+  -- By combining the results from hQ and h_card_le, we get a contradiction.
+  have h_contradiction : ∀ n ≥ N', (2 / 3 : ℝ) * 2^n ≤ ∑ i ∈ Finset.range (n / 2 + (P n).totalDegree + 1), (Nat.choose n i : ℝ) := by
+    intros n hn
+    obtain ⟨Q, hQ_deg, hQ_card⟩ := hQ n hn
+    have h_card_le_Q := h_card_le n hn Q hQ_deg
+    norm_cast at *;
+    rw [ div_mul_eq_mul_div, div_le_iff₀ ] at * <;> norm_cast at *;
+    rw [ ge_iff_le, div_le_iff₀ ] at hQ_card <;> norm_cast at * ; linarith;
+  exact absurd ( hN ( N' + N + 1 ) ( by linarith ) ( P ( N' + N + 1 ) |> MvPolynomial.totalDegree ) ( h_contradiction ( N' + N + 1 ) ( by linarith ) ) ) ( by linarith [ hN' ( N' + N + 1 ) ( by linarith ) ] )
 
 /-- AC₀ cannot compute parity: it is too sensitive. -/
-theorem AC₀_not_parity : FuncFamily.PARITY ∉ AC₀ := by
-  by_contra h
-  replace h := AC₀_low_degree _ h
-  exact parity_not_low_degree h
+theorem AC₀_not_parity : FuncFamily.PARITY ∉ AC₀ :=
+  parity_not_low_degree ∘ AC₀_low_degree _
