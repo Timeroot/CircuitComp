@@ -34,19 +34,19 @@ def AC₀_GateOps : Set (GateOp (Fin 2)) :=
   ⋃ n, {⟨Fin n, fun x ↦ ∏ i, x i⟩} --ANDs of all arity (including Id)
 
 /-- AC₀, the constant-depth polynomial-size circuits of NOT gates and arbitrary-arity AND gates. -/
-def AC₀ : Set (FuncFamily (Fin 2)) :=
+def AC₀ : Set (FuncFamily₁ (Fin 2)) :=
   CircuitClass .poly .const AC₀_GateOps
 
 /-- The circuit class of nonuniform ACi: polynomial-size circuits with
 NOTs and arbitrary fan-in ANDs, and depth O(logⁱ n). -/
-def ACi (i : ℕ) : Set (FuncFamily (Fin 2)) :=
+def ACi (i : ℕ) : Set (FuncFamily₁ (Fin 2)) :=
   CircuitClass .poly (.bigO (Nat.log2 · ^ i)) AC₀_GateOps
 
 /-- AC₀ is the 0th element of the ACi hierarchy -/
 theorem ACi_zero : ACi 0 = AC₀ := by
   rfl
 
-def AC : Set (FuncFamily (Fin 2)) :=
+def AC : Set (FuncFamily₁ (Fin 2)) :=
   ⋃ i, ACi i
 
 theorem ACi_subset_NC (i : ℕ) : ACi i ⊆ AC :=
@@ -69,7 +69,7 @@ theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
     simp
 
 /-- The AND problem is contained in AC₀, because we can take a single AND gate. -/
-theorem AND_mem_AC₀ : FuncFamily.AND ∈ AC₀ := by
+theorem AND_mem_AC₀ : FuncFamily₁.AND ∈ AC₀ := by
   use (fun n ↦ ⟨
     1,
     ![Fin n, Fin 1],
@@ -1038,7 +1038,7 @@ theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Z
     (MvPolynomial.totalDegree <| P · : ℕ → ℕ) ∈ GrowthRate.polylog
     ∧
     ( ∀ n, --The polynomial agrees on at least 2/3rd of inputs
-      { x | (FuncFamily.PARITY n x).val = (P n).eval (fun i ↦ (x i : ZMod 3))
+      { x | (FuncFamily₁.PARITY n x).val = (P n).eval (fun i ↦ (x i : ZMod 3))
       }.ncard ≥ (2/3 : ℚ) * 2^n
     )
     := by
@@ -1066,7 +1066,7 @@ theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Z
     rotate_left;
     exact Finset.univ.filter fun x => ( ∑ i, x i : Fin 2 ) = ( MvPolynomial.eval fun i => ( x i : ZMod 3 ) ) ( P n );
     · intro x hx; specialize hQ₂ x; aesop;
-    · ext; simp +decide [ FuncFamily.PARITY ] ;
+    · ext; simp +decide [ FuncFamily₁.PARITY ] ;
   -- By `card_le_of_approx_product`, $|S'| \le \sum_{i=0}^{n/2+d(n)} \binom{n}{i}$.
   have h_card_le : ∀ n ≥ N', ∀ Q : MvPolynomial (Fin n) (ZMod 3), Q.totalDegree = (P n).totalDegree → (Finset.univ.filter (fun x : Fin n → Fin 2 => (Q.eval (fun i => (2 * (x i).val - 1 : ZMod 3)) = ∏ i, (2 * (x i).val - 1 : ZMod 3)))).card ≤ ∑ i ∈ Finset.range (n / 2 + (P n).totalDegree + 1), (Nat.choose n i : ℝ) := by
     intros n hn Q hQ_deg
@@ -1092,5 +1092,5 @@ theorem parity_not_low_degree : ¬∃ (P : (n : ℕ) → MvPolynomial (Fin n) (Z
   exact absurd ( hN ( N' + N + 1 ) ( by linarith ) ( P ( N' + N + 1 ) |> MvPolynomial.totalDegree ) ( h_contradiction ( N' + N + 1 ) ( by linarith ) ) ) ( by linarith [ hN' ( N' + N + 1 ) ( by linarith ) ] )
 
 /-- AC₀ cannot compute parity: it is too sensitive. -/
-theorem AC₀_not_parity : FuncFamily.PARITY ∉ AC₀ :=
+theorem AC₀_not_parity : FuncFamily₁.PARITY ∉ AC₀ :=
   parity_not_low_degree ∘ AC₀_low_degree _

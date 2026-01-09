@@ -436,7 +436,7 @@ namespace CircuitFamily
 variable {α : Type u} {inp out : Type v} (CF : CircuitFamily α)
 
 /-- A `CircuitFamily` is said to `computes` a function family if that is given by its `eval₁`.-/
-def computes (F : FuncFamily α) : Prop :=
+def computes (F : FuncFamily₁ α) : Prop :=
   ∀ n, (CF n).eval₁ = F n
 
 /-- Predicate expressing that the depth grows as O(f n). -/
@@ -469,7 +469,7 @@ open CircuitFamily
 /-- A `CircuitClass` is a set of function families defined by circuits on a given set of gates,
 a bound on depth, and a bound on size. -/
 def CircuitClass {α : Type*} (size : GrowthRate) (depth : GrowthRate) (gates : Set (GateOp α))
-    : Set (FuncFamily α) :=
+    : Set (FuncFamily₁ α) :=
   fun fs ↦ ∃ (CF : CircuitFamily α),
     CF.computes fs
     ∧ CF.hasSize size

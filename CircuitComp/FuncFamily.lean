@@ -15,18 +15,37 @@ important problems.
 
 -/
 
-/-- A Sigma type over functions of varying arity from α to α. -/
-abbrev FuncFamily (α : Type*) := (n : ℕ) → (Fin n → α) → α
+/-- A collection of functions of varying arity n, mapping n variables of type α
+to `out`-indexed variables of type `α`. -/
+abbrev FuncFamily (α : Type*) (out : ℕ → Type*) := (n : ℕ) → (Fin n → α) → (out n → α)
+
+/-- Much like `FuncFamily`, but the case where the output is a single value. The
+equivalence is given in `toFuncFamily`. -/
+abbrev FuncFamily₁ (α : Type*) := (n : ℕ) → (Fin n → α) → α
 
 namespace FuncFamily
+
+variable {α β : Type*} {out : ℕ → Type*}
+
+/-- Lift an equivalence `α ≃ β` to an equivalence `FuncFamily α ≃ FuncFamily β`. -/
+@[simps]
+def onEquiv (e : α ≃ β) : FuncFamily α out ≃ FuncFamily β out where
+  toFun fn n x i := e <| fn n (e.symm ∘ x) i
+  invFun fn n x i := e.symm <| fn n (e ∘ x) i
+  left_inv _ := by simp [← Function.comp_assoc]
+  right_inv _ := by simp [← Function.comp_assoc]
+
+end FuncFamily
+
+namespace FuncFamily₁
 
 variable {α β : Type*}
 
 open Classical in
 /-- A function family over booleans can be viewed as a language, where the output
 value of `true` corresponds to the string being in the language. -/
-noncomputable def toLanguage : FuncFamily Bool ≃ Language Bool where
-  toFun f := { s | f s.length s.get }
+noncomputable def toLanguage : FuncFamily₁ Bool ≃ Language Bool where
+  toFun f := { s | f s.length s.get}
   invFun l := fun n xs ↦ decide (List.ofFn xs ∈ l)
   left_inv := by
     intro fs
@@ -47,20 +66,18 @@ noncomputable def toLanguage : FuncFamily Bool ≃ Language Bool where
     rw [Set.mem_setOf]
     simp
 
-/-- Lift an equivalence `α ≃ β` to an equivalence `FuncFamily α ≃ FuncFamily β`. -/
-@[simps]
-def onEquiv (e : α ≃ β) : FuncFamily α ≃ FuncFamily β where
-  toFun fn n x := e <| fn n <| e.symm ∘ x
-  invFun fn n x := e.symm <| fn n <| e ∘ x
-  left_inv _ := by simp [← Function.comp_assoc]
-  right_inv _ := by simp [← Function.comp_assoc]
+noncomputable def toFuncFamily : FuncFamily₁ α ≃ FuncFamily α (fun _ ↦ Unit) where
+  toFun f n xs _ := f n xs
+  invFun f n xs := f n xs ()
+  left_inv _ := rfl
+  right_inv _ := rfl
 
 /-- The problem AND: Compute the logical AND of the input bits. -/
-def AND : FuncFamily (Fin 2) :=
+def AND : FuncFamily₁ (Fin 2) :=
   fun _ xs ↦ ∏ i, xs i
 
 /-- The problem PARITY: Compute the parity of the input bits. -/
-def PARITY : FuncFamily (Fin 2) :=
+def PARITY : FuncFamily₁ (Fin 2) :=
   fun _ xs ↦ ∑ i, xs i
 
 /-- The "AND" problem has an essential dependence of all inputs. -/
@@ -73,4 +90,4 @@ theorem AND_EssDomain : ∀ n, (AND n).EssDomain = .univ := by
   · simp +contextual [eq_comm]
   · simp [AND]
 
-end FuncFamily
+end FuncFamily₁

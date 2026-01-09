@@ -15,19 +15,19 @@ def NC₀_GateOps : Set (GateOp (Fin 2)) :=
 
 /-- The circuit class of nonuniform NC⁰: constant depth polynomial-size circuits with
 fanin-2 NOTs and ANDs. -/
-def NC₀ : Set (FuncFamily (Fin 2)) :=
+def NC₀ : Set (FuncFamily₁ (Fin 2)) :=
   CircuitClass .poly .const NC₀_GateOps
 
 /-- The circuit class of nonuniform NCi: polynomial-size circuits with
 NOTs and fanin-2 ANDs, and depth O(logⁱ n). -/
-def NCi (i : ℕ) : Set (FuncFamily (Fin 2)) :=
+def NCi (i : ℕ) : Set (FuncFamily₁ (Fin 2)) :=
   CircuitClass .poly (.bigO (Nat.log2 · ^ i)) NC₀_GateOps
 
 /-- NC₀ is the 0th element of the NCi hierarchy -/
 theorem NCi_zero : NCi 0 = NC₀ := by
   rfl --Wait, this actually holds by definitional equality? That's hilarious
 
-def NC : Set (FuncFamily (Fin 2)) :=
+def NC : Set (FuncFamily₁ (Fin 2)) :=
   ⋃ i, NCi i
 
 theorem NCi_subset_NC (i : ℕ) : NCi i ⊆ NC :=
@@ -39,7 +39,7 @@ lemma NC₀_fanin_le_2 : ∀ op ∈ NC₀_GateOps, Finite op.ι ∧ Nat.card op.
   aesop (add safe Finite.of_fintype)
 
 /-- Any function family in NC₀ has a bounded arity (more precisely, a bounded size `EssDomain`). -/
-theorem bounded_essDomain_of_mem_NC₀ {fn : FuncFamily (Fin 2)} (h : fn ∈ NC₀) :
+theorem bounded_essDomain_of_mem_NC₀ {fn : FuncFamily₁ (Fin 2)} (h : fn ∈ NC₀) :
     ∃ k, ∀ n, (fn n).EssDomain.ncard ≤ k := by
   obtain ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄⟩ := h
   obtain ⟨C, hC⟩ := GrowthRate.bounded_of_const hCF₃
@@ -57,11 +57,11 @@ theorem bounded_essDomain_of_mem_NC₀ {fn : FuncFamily (Fin 2)} (h : fn ∈ NC�
 
 /-- The AND problem is not in the class NC₀, because NC₀ only has functions
 of bounded support, and AND is arbitrarilty large support. -/
-theorem AND_not_mem_NC₀ : FuncFamily.AND ∉ NC₀ := by
+theorem AND_not_mem_NC₀ : FuncFamily₁.AND ∉ NC₀ := by
   intro h
   obtain ⟨k, hk⟩ := bounded_essDomain_of_mem_NC₀ h
   specialize hk (k+1)
-  rw [FuncFamily.AND_EssDomain] at hk
+  rw [FuncFamily₁.AND_EssDomain] at hk
   simp [Set.ncard_univ] at hk
 
 /-- The definition of NCi is unchanged if you add any larger *finite* set of
@@ -256,12 +256,12 @@ theorem NC1_AND_Circuit_pos_evalNode (n : ℕ) (hn : 0 < n) (inputs : Fin n → 
     exact IH
 end AristotleLemmas
 
-theorem NC1_AND_CircuitFamily_computes : NC1_AND_CircuitFamily.computes FuncFamily.AND := by
+theorem NC1_AND_CircuitFamily_computes : NC1_AND_CircuitFamily.computes FuncFamily₁.AND := by
   unfold NC1_AND_CircuitFamily CircuitFamily.computes;
   intro n; by_cases hn : n = 0
   · bound;
   · simp [hn]
-    unfold FeedForward.eval₁ FuncFamily.AND FeedForward.eval;
+    unfold FeedForward.eval₁ FuncFamily₁.AND FeedForward.eval;
     funext xs;
     convert NC1_AND_Circuit_pos_evalNode n ( Nat.pos_of_ne_zero hn ) xs ⟨ Nat.clog 2 n, Nat.lt_succ_self _ ⟩ ⟨ 0, Nat.pos_of_ne_zero _ ⟩;
     all_goals norm_num [ target_prod ];
@@ -325,7 +325,7 @@ lemma NC1_AND_depth_mem_log : (fun n ↦ (NC1_AND_CircuitFamily n).depth) ∈ Gr
 end AristotleLemmas
 
 /-- The AND problem is contained in NC₁, because we can make a log-depth tree of ANDs. -/
-theorem AND_mem_NCi_1 : FuncFamily.AND ∈ NCi 1 := by
+theorem AND_mem_NCi_1 : FuncFamily₁.AND ∈ NCi 1 := by
   --Prove by constructing the circuit
   use NC1_AND_CircuitFamily
   --Split up the four conditions on the family
