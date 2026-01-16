@@ -72,7 +72,7 @@ theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
 theorem AND_mem_AC₀ : FuncFamily₁.AND ∈ AC₀ := by
   use (fun n ↦ ⟨
     1,
-    ![Fin n, Fin 1],
+    ![Fin n, Unit],
     fun d h ↦ ⟨⟨Fin n, fun x ↦ ∏ i, x i⟩, by rw [Fin.fin_one_eq_zero d]; exact id⟩,
     rfl,
     rfl
@@ -380,7 +380,7 @@ lemma ncard_union_bound {α ι : Type*} [Finite ι] [Finite α] (S : ι → Set 
   exact h_finite.trans ( by simpa using Finset.sum_le_sum fun i ( hi : i ∈ Finset.univ ) => h i )
 
 lemma exists_poly_approx_step {n ℓ : ℕ}
-    (circ : FeedForward (Fin 2) (Fin n) (Fin 1))
+    (circ : FeedForward (Fin 2) (Fin n) Unit)
     (h_finite : circ.finite)
     (h_gates : circ.onlyUsesGates AC₀_GateOps)
     (d : Fin circ.depth)
@@ -435,21 +435,20 @@ lemma exists_poly_approx_step {n ℓ : ℕ}
       <;> simp [*]
 
 lemma exists_poly_approx_base {n ℓ : ℕ}
-    (circ : FeedForward (Fin 2) (Fin n) (Fin 1)) :
+    (circ : FeedForward (Fin 2) (Fin n) Unit) :
     ∃ (Polys : circ.nodes 0 → MvPolynomial (Fin n) (ZMod 3))
       (BadSet : Set (Fin n → Fin 2)),
       (∀ u, (Polys u).totalDegree ≤ (2 * ℓ) ^ 0) ∧
       ((BadSet.ncard : ℚ) ≤ 0) ∧
       (∀ x, x ∉ BadSet → ∀ u, ((circ.evalNode u x : Nat) : ZMod 3) = (Polys u).eval (fun j ↦ ((x j : Nat) : ZMod 3))) := by
-  use fun u => MvPolynomial.X (circ.nodes_zero ▸ u);
-  use ∅;
+  use fun u ↦ MvPolynomial.X (circ.nodes_zero ▸ u), ∅
   aesop
 
 /-
 For any layer i, there exist polynomials approximating the nodes at layer i, with degree at most (2ℓ)^i and total error set size proportional to the number of gates up to layer i.
 -/
 theorem exists_poly_approx_of_layer {n ℓ : ℕ}
-    (circ : FeedForward (Fin 2) (Fin n) (Fin 1))
+    (circ : FeedForward (Fin 2) (Fin n) Unit)
     (h_finite : circ.finite) (h_gates : circ.onlyUsesGates AC₀_GateOps)
     (i : Fin (circ.depth + 1)) :
     ∃ (Polys : circ.nodes i → MvPolynomial (Fin n) (ZMod 3))
@@ -480,7 +479,7 @@ end AristotleLemmas
 /-- Applying this recursively, on an n-bit circuit of size s and depth h, we find a
 polynomial with degree (2ℓ)^h and s2^(-ℓ) error rate. -/
 theorem exists_good_poly_of_circuit (n ℓ : ℕ)
-    (circ : FeedForward (Fin 2) (Fin n) (Fin 1))
+    (circ : FeedForward (Fin 2) (Fin n) Unit)
     (h_finite : circ.finite) (h_gates : circ.onlyUsesGates AC₀_GateOps)  :
     ∃ (P : MvPolynomial (Fin n) (ZMod 3)),
       P.totalDegree ≤ (2 * ℓ) ^ circ.depth ∧

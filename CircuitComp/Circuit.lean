@@ -96,18 +96,24 @@ def relabelIn (hF : F.depth ≠ 0) (e : inp ≃ a) : FeedForward α a out :=
 theorem Fin.castSucc_lt_top (n : ℕ) (x : Fin n) : x.castSucc < ⊤ :=
   Ne.lt_top (by simp [Fin.ext_iff, x.2.ne])
 
--- /-- Relabel the output type of a `FeedForward` given an `Equiv`. -/
--- def relabelOut (hF : F.depth ≠ 0) (e : out ≃ a) : FeedForward α inp a :=
---   have : NeZero F.depth := ⟨hF⟩
---   { depth := F.depth
---     nodes k := if k = ⊤ then a else F.nodes k
---     gates k n := if hk : k = ⊤ then
---         have g := F.gates k (by simp [Fin.top_eq_last, hk] at n ⊢; exact e.symm n)
---         ⟨g.op, have gi := g.inputs; fun i ↦ by simp [hk, Fin.top_eq_last, Fin.castSucc] at gi ⊢; exact sorry⟩
---       else cast (by simp [Fin.top_eq_last, (Fin.castSucc_lt_last k).ne]) (F.gates k sorry)
---     nodes_zero := by simp [hF]
---     nodes_last := by simp [Fin.top_eq_last]
---   }
+/-- Relabel the output type of a `FeedForward` given an `Equiv`. -/
+def relabelOut (hF : F.depth ≠ 0) (e : out ≃ a) : FeedForward α inp a :=
+  haveI : NeZero F.depth := ⟨hF⟩
+  { depth := F.depth
+    nodes k := if k = ⊤ then a else F.nodes k
+    gates k n := if hk : k = ⊤ then
+        have g := F.gates k (by simp [Fin.top_eq_last, hk] at n ⊢; exact e.symm n)
+        ⟨g.op, fun i ↦ by simpa [Fin.top_eq_last, hk] using g.inputs i⟩
+      else cast (by simp [Fin.top_eq_last, (Fin.castSucc_lt_last k).ne])
+        (F.gates k (cast (by simp [Fin.ext_iff] at hk ⊢; grind) n))
+    nodes_zero := by simp [hF]
+    nodes_last := by simp [Fin.top_eq_last]
+  }
+
+@[simp]
+theorem relabelOut_depth (hf : F.depth ≠ 0) (e : out ≃ inp) :
+    (F.relabelOut hf e).depth = F.depth := by
+  rfl
 
 /-- Compose two `FeedForward`s by stacking one on top of the other. -/
 def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : FeedForward α a c where
@@ -328,13 +334,17 @@ noncomputable def width_card : Cardinal :=
   ⨆ d, Cardinal.mk (F.nodes d)
 
 /-- The size of a feedforward circuit is the total number of gates. Note that if any layer is
-infinite, the whole sum will be zero. -/
+infinite, the whole sum will be zero. The inputs are nodes in the circuit but are not counted
+towards the size. -/
 noncomputable def size : ℕ :=
   Nat.card (@Sigma (Fin F.depth) (fun d ↦ F.nodes d.succ))
 
 /-- We call a circuit finite if the number of nodes is finite. -/
-def finite : Prop :=
-  ∀ i, Finite (F.nodes i)
+protected class Finite : Prop where
+  finite : ∀ i, Finite (F.nodes i)
+
+instance [inst : F.Finite] {i} : Finite (F.nodes i) :=
+  inst.finite i
 
 /-- A `FeedForward` is said to `onlyUsesGates` from a set of `GateOp`s if every gate is one of those. -/
 def onlyUsesGates (S : Set (GateOp α)) : Prop :=
@@ -428,50 +438,81 @@ open FeedForward
 
 /-- A `CircuitFamily` is a collection of `FeedForward` circuits parameterized by an input size `n`.
 The `n`th circuit must have input type `Fin n`, and a `Fin 1` output. -/
-def CircuitFamily (α : Type u) :=
-  (n : ℕ) → FeedForward α (Fin n) (Fin 1)
+def CircuitFamily (α : Type u) (out : ℕ → Type) :=
+  (n : ℕ) → FeedForward α (Fin n) (out n)
+
+abbrev CircuitFamily₁ (α : Type u) :=
+ CircuitFamily α (fun _ ↦ Unit)
 
 namespace CircuitFamily
 
-variable {α : Type u} {inp out : Type v} (CF : CircuitFamily α)
+variable {α : Type u} {out : ℕ → Type} (CF : CircuitFamily α out)
 
-/-- A `CircuitFamily` is said to `computes` a function family if that is given by its `eval₁`.-/
-def computes (F : FuncFamily₁ α) : Prop :=
-  ∀ n, (CF n).eval₁ = F n
+/-- A `CircuitFamily` `computes` a function family if that is given by its `eval`.-/
+def computes (F : FuncFamily α out) : Prop :=
+  ∀ n, (CF n).eval = F n
 
 /-- Predicate expressing that the depth grows as O(f n). -/
 def hasDepth (f : GrowthRate) : Prop :=
   (fun n ↦ (CF n).depth) ∈ f
 
 /-- Predicate expressing that all circuits in the family are finite. -/
-def finite : Prop :=
-  ∀ n, (CF n).finite
+protected class Finite : Prop where
+  finite : ∀ n, (CF n).Finite
+
+instance [inst : CF.Finite] {n} : (CF n).Finite :=
+  inst.finite n
 
 /-- Predicate expressing that the size grows as O(f n). -/
-def hasSize (f : GrowthRate) : Prop :=
-  CF.finite ∧ (fun n ↦ (CF n).size) ∈ f
+def hasSize (f : GrowthRate) [CF.Finite]: Prop :=
+  (fun n ↦ (CF n).size) ∈ f
 
 /-- A `CircuitFamily` is said to `onlyUsesGates` from a set of `GateOp`s if every gate is one of those. -/
 def onlyUsesGates (S : Set (GateOp α)) : Prop :=
   ∀ n, (CF n).onlyUsesGates S
 
+end CircuitFamily
+
+namespace CircuitFamily₁
+
+variable {α : Type u} {inp out : Type v} (CF : CircuitFamily₁ α)
+
+/-- A `CircuitFamily₁` is said to `computes` a function family if that is given by its `eval₁`.-/
+def computes₁ (F : FuncFamily₁ α) : Prop :=
+  ∀ n, (CF n).eval₁ = F n
+
+theorem computes_iff_computes₁ (F : FuncFamily₁ α) :
+    CF.computes₁ F ↔ CircuitFamily.computes CF F.toFuncFamily := by
+  constructor <;> intro h n <;> funext
+  · rw [FuncFamily₁.toFuncFamily, Equiv.coe_fn_mk, ← h, eval₁]
+  · simp [CircuitFamily.computes, FuncFamily₁.toFuncFamily] at h
+    rw [eval₁, h n]
+
+abbrev hasDepth (f : GrowthRate) := CircuitFamily.hasDepth CF f
+
+protected abbrev Finite := CircuitFamily.Finite CF
+
+abbrev hasSize [CF.Finite] (f : GrowthRate) := CircuitFamily.hasSize CF f
+
+abbrev onlyUsesGates (S : Set (GateOp α)) := CircuitFamily.onlyUsesGates CF S
+
 variable {CF} {S T : Set (GateOp α)}
 
-theorem onlyUsesGates_mono (hS : S ⊆ T) (hCF : CF.onlyUsesGates S) :
+theorem onlyUsesGates_mono (hS : S ⊆ T) (hCF : onlyUsesGates CF S) :
   CF.onlyUsesGates T := by
   intro n
   exact FeedForward.onlyUsesGates_mono hS (hCF n)
 
-end CircuitFamily
+end CircuitFamily₁
 
-open CircuitFamily
+open CircuitFamily₁
 
 /-- A `CircuitClass` is a set of function families defined by circuits on a given set of gates,
 a bound on depth, and a bound on size. -/
 def CircuitClass {α : Type*} (size : GrowthRate) (depth : GrowthRate) (gates : Set (GateOp α))
     : Set (FuncFamily₁ α) :=
-  fun fs ↦ ∃ (CF : CircuitFamily α),
-    CF.computes fs
+  fun fs ↦ ∃ (CF : CircuitFamily₁ α) (_ : CF.Finite),
+    CF.computes₁ fs
     ∧ CF.hasSize size
     ∧ CF.hasDepth depth
     ∧ CF.onlyUsesGates gates
@@ -481,15 +522,15 @@ namespace CircuitClass
 variable {α : Type*} (size : GrowthRate) (depth : GrowthRate) (gates : Set (GateOp α))
 
 theorem Monotone_size : Monotone fun s ↦ CircuitClass s depth gates := by
-  rintro s₁ s₂ hs fs ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄⟩
-  exact ⟨CF, hCF₁, ⟨hCF₂.1, hs hCF₂.2⟩, hCF₃, hCF₄⟩
+  rintro s₁ s₂ hs fs ⟨CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
+  exact ⟨CF, h_fin, h_comp, hs h_size, h_depth, h_gates⟩
 
 theorem Monotone_depth : Monotone fun d ↦ CircuitClass size d gates := by
-  rintro d₁ d₂ hd fs ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄⟩
-  exact ⟨CF, hCF₁, hCF₂, hd hCF₃, hCF₄⟩
+  rintro d₁ d₂ hd fs ⟨CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
+  exact ⟨CF, h_fin, h_comp, h_size, hd h_depth, h_gates⟩
 
 theorem Monotone_gates : Monotone fun (g : Set (GateOp α)) ↦ CircuitClass size depth g := by
-  rintro g₁ g₂ hg fs ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄⟩
-  exact ⟨CF, hCF₁, hCF₂, hCF₃, onlyUsesGates_mono hg hCF₄⟩
+  rintro g₁ g₂ hg fs ⟨CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
+  exact ⟨CF, h_fin, h_comp, h_size, h_depth, onlyUsesGates_mono hg h_gates⟩
 
 end CircuitClass

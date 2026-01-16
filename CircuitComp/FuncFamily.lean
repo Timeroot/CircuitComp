@@ -20,7 +20,7 @@ to `out`-indexed variables of type `α`. -/
 abbrev FuncFamily (α : Type*) (out : ℕ → Type*) := (n : ℕ) → (Fin n → α) → (out n → α)
 
 /-- Much like `FuncFamily`, but the case where the output is a single value. The
-equivalence is given in `toFuncFamily`. -/
+equivalence is given in `FuncFamily₁.toFuncFamily`. -/
 abbrev FuncFamily₁ (α : Type*) := (n : ℕ) → (Fin n → α) → α
 
 namespace FuncFamily
@@ -47,21 +47,19 @@ value of `true` corresponds to the string being in the language. -/
 noncomputable def toLanguage : FuncFamily₁ Bool ≃ Language Bool where
   toFun f := { s | f s.length s.get}
   invFun l := fun n xs ↦ decide (List.ofFn xs ∈ l)
-  left_inv := by
-    intro fs
+  left_inv fs := by
     ext n f
-    have := List.length_ofFn (f := f)
-    dsimp
+    dsimp only
     rw [Set.mem_setOf]
     simp only [Bool.decide_eq_true]
+    have := List.length_ofFn (f := f)
     congr
-    refine Function.hfunext ?_ ?_
+    apply Function.hfunext
     · congr
     · intros
-      rw [List.get_ofFn, Fin.cast]
+      simp_rw [List.get_ofFn, Fin.cast]
       congr
-  right_inv := by
-    intro
+  right_inv l := by
     ext
     rw [Set.mem_setOf]
     simp
@@ -84,10 +82,10 @@ def PARITY : FuncFamily₁ (Fin 2) :=
 theorem AND_EssDomain : ∀ n, (AND n).EssDomain = .univ := by
   intro n
   ext i
-  simp only [Function.EssDomain, ne_eq, Set.mem_setOf_eq, Set.mem_univ, iff_true]
-  use (fun _ ↦ 1), (fun j ↦ if i = j then 0 else 1)
+  simp only [Function.EssDomain, Set.mem_setOf_eq, Set.mem_univ, iff_true]
+  use fun _ ↦ 1, fun j ↦ if i = j then 0 else 1
   constructor
-  · simp +contextual [eq_comm]
+  · grind
   · simp [AND]
 
 end FuncFamily₁
