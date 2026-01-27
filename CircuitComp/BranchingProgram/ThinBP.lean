@@ -1,13 +1,17 @@
-import CircuitComp.BranchingProgram
+import CircuitComp.BranchingProgram.Basic
+import CircuitComp.ForMathlib
 
 /-!
 Proof that every Boolean function can be computed by branching program of width 3 and depth O(2^n).
+This generalizes appropriately (with a larger width)to other types, with a finite number of
+values for each input and a finite number of outputs.
 -/
 
 open LayeredBranchingProgram
 
 noncomputable section
 
+variable {α : Type u} {β : Type v} {γ : Type w}
 variable [Fintype α] [Fintype β] [Fintype γ] [Nonempty α] [Nonempty β] (F : (α → β) → γ)
 
 /--
@@ -243,10 +247,6 @@ theorem thinBP_CorrectState_succ {n} (x : α → β) :
   --Induction
   sorry
 
-omit [Fintype α] [Fintype β] [Nonempty α] [Nonempty β] in
-private lemma cast_comm {a : α} {b : β} {h : α = β} : cast h a = b ↔ a = cast h.symm b := by
-  rw [cast_eq_iff_heq, eq_comm, cast_eq_iff_heq, heq_comm]
-
 theorem thinBP_computes : (thinBP F).computes F := by
   intro x
   rw [eval]
@@ -261,9 +261,8 @@ theorem thinBP_computes : (thinBP F).computes F := by
     simp only [thinBP, eq_mp_eq_cast, cast_cast, cast_eq]
     rw! [Nat.sub_one_add_one]
     · simp
-    rcases h₂ with ⟨h₂, h₃⟩
-    clear h
-    contrapose! h₃
+    replace h₂ := h₂.right
+    contrapose! h₂
     rw [Equiv.eq_symm_apply]
     sorry
   · rename_i h₂
@@ -285,14 +284,14 @@ theorem computes_const_width :
     ∃ (P : LayeredBranchingProgram α β γ) (_ : P.Finite),
       P.computes F ∧
       P.IsOblivious ∧
-      P.width ≤ Fintype.card γ + 1 ∧
-      P.depth ≤ Fintype.card α * (Fintype.card β ^ Fintype.card α) := by
+      P.width = Fintype.card γ + 1 ∧
+      P.depth = Fintype.card α * (Fintype.card β ^ Fintype.card α) := by
   have _ : Nonempty γ := ⟨ F (fun _ ↦ Nonempty.some ‹_›) ⟩
   use thinBP F, thinBP_Finite F
   and_intros
   · exact thinBP_computes F
   · exact thinBP_IsOblivious F
-  · grw [thinBP_width]
+  · rw [thinBP_width]
   · rfl
 
 /-- A boolean function can be computed in O(n * 2^n) depth and width 3.-/
@@ -300,6 +299,6 @@ theorem computes_bool_width_3 (F : (α → Bool) → Bool) :
     ∃ (P : LayeredBranchingProgram α Bool Bool) (_ : P.Finite),
       P.computes F ∧
       P.IsOblivious ∧
-      P.width ≤ 3 ∧
-      P.depth ≤ Fintype.card α * 2 ^ Fintype.card α :=
+      P.width = 3 ∧
+      P.depth = Fintype.card α * 2 ^ Fintype.card α :=
   computes_const_width F

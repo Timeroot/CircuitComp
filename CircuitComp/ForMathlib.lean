@@ -10,6 +10,7 @@ import Mathlib.Topology.Algebra.Order.Floor
 import Mathlib.Tactic.Peel
 import Mathlib.Tactic.Bound
 
+--PR'ed in https://github.com/leanprover-community/mathlib4/pull/33864
 /-- The factorial function is primitve recursive. -/
 theorem Primrec.factorial : Primrec Nat.factorial := by
   convert list_foldl (σ := ℕ) (h := fun n ⟨p, k⟩ ↦ p * (k + 1)) list_range (const 1) ?_
@@ -125,3 +126,7 @@ lemma exists_constant_degree_bound :
     rw [ ge_iff_le, div_le_iff₀ ] <;> nlinarith [ show 0 < C * 2 ^ n / Real.sqrt n by exact div_pos ( mul_pos hC.1 ( pow_pos zero_lt_two _ ) ) ( Real.sqrt_pos.mpr ( Nat.cast_pos.mpr ( by linarith ) ) ), show 0 < ( 2 : ℝ ) ^ n by positivity, mul_div_cancel₀ ( C * 2 ^ n ) ( ne_of_gt ( Real.sqrt_pos.mpr ( Nat.cast_pos.mpr ( by linarith ) ) ) ) ];
   ring_nf at *;
   nlinarith [ show ( n : ℝ ) ≥ 1 + N + ⌈C ^ 2⌉₊ * 1764 by exact_mod_cast hn, Real.sqrt_nonneg n, Real.sq_sqrt <| Nat.cast_nonneg n, inv_pos.mpr hC.1, mul_inv_cancel₀ hC.1.ne', Nat.le_ceil ( C ^ 2 ), pow_two_nonneg ( C - 1 ), pow_two_nonneg ( C + 1 ) ]
+
+lemma cast_comm {α β : Type u} {a : α} {b : β} (h : α = β) :
+    cast h a = b ↔ a = cast h.symm b := by
+  rw [cast_eq_iff_heq, eq_comm, cast_eq_iff_heq, heq_comm]

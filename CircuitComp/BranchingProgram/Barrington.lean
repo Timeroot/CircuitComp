@@ -1,51 +1,14 @@
 
 import CircuitComp.NC
-import CircuitComp.BranchingProgram
+import CircuitComp.BranchingProgram.Basic
+
+import Mathlib.GroupTheory.SpecificGroups.Alternating
+
+noncomputable section
+
+variable {α : Type u} {β : Type v} {γ : Type w}
 
 open LayeredBranchingProgram
-
-
-/-
-Define BPFamily and BPClass to represent families of branching programs and the complexity classes they define, specifically focusing on width and depth bounds.
--/
-/-- A `BPFamily` is a collection of `LayeredBranchingProgram`s parameterized by an input size `n`.
-The `n`th program must have input type `Fin n` (variables), read values of type `Fin 2`, and output `Fin 2`. -/
-def BPFamily := (n : ℕ) → LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)
-
-/-- A `BPFamily` `computes` a function family if that is given by its `eval`.-/
-def BPFamily.computes (BPF : BPFamily) (F : FuncFamily₁ (Fin 2)) : Prop :=
-  ∀ n, (BPF n).eval = F n
-
-/-- Predicate expressing that the depth grows as O(f n). -/
-def BPFamily.hasDepth (BPF : BPFamily) (f : GrowthRate) : Prop :=
-  (fun n ↦ (BPF n).depth) ∈ f
-
-/-- Predicate expressing that the width is bounded by `w`. -/
-def BPFamily.hasWidth (BPF : BPFamily) (w : ℕ) : Prop :=
-  ∀ n, (BPF n).width ≤ w
-
-/-- Predicate expressing that all programs in the family are finite. -/
-protected class BPFamily.Finite (BPF : BPFamily) : Prop where
-  finite : ∀ n, (BPF n).Finite
-
-instance [inst : BPFamily.Finite BPF] {n} : (BPF n).Finite :=
-  inst.finite n
-
-/-- Predicate expressing that the size grows as O(f n). -/
-def BPFamily.hasSize (BPF : BPFamily) (f : GrowthRate) [BPF.Finite]: Prop :=
-  (fun n ↦ (BPF n).size) ∈ f
-
-/-- Predicate expressing that the programs are oblivious. -/
-def BPFamily.IsOblivious (BPF : BPFamily) : Prop :=
-  ∀ n, (BPF n).IsOblivious
-
-/-- A `BPClass` is a set of function families defined by branching programs with
-a bound on depth and a bound on width. -/
-def BPClass (width : ℕ) (depth : GrowthRate) : Set (FuncFamily₁ (Fin 2)) :=
-  fun fs ↦ ∃ (BPF : BPFamily) (_ : BPF.Finite),
-    BPF.computes fs
-    ∧ BPF.hasWidth width
-    ∧ BPF.hasDepth depth
 
 /-
 Define BarringtonProgram and its evaluation.
@@ -76,30 +39,29 @@ def toBP_nodes {n : ℕ} (BP : BarringtonProgram n) (i : Fin (BP.len + 1)) : Typ
 Define the conversion from a Barrington Program to a Layered Branching Program. Explicitly handle types to avoid ambiguity.
 -/
 def toBP {n : ℕ} (BP : BarringtonProgram n) (σ : Equiv.Perm (Fin 5)) :
-    LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2) :=
-  { depth := BP.len
-    nodes := BP.toBP_nodes
-    nodeVar := fun {k} _ ↦ BP.var k
-    edges := fun {k} u b ↦
-      if hk : k.val = 0 then
-        let p := if b = 1 then BP.perm1 k else BP.perm0 k
-        let dest : Fin 5 := p 0
-        cast (by unfold toBP_nodes; aesop) dest
-      else
-        let u' : Fin 5 := cast (by simp [toBP_nodes, hk]) u
-        let p := if b = 1 then BP.perm1 k else BP.perm0 k
-        p u'
-    startUnique := {
-      default := cast (by simp [toBP_nodes]) (0 : Fin 1)
-      uniq := fun x ↦ Fin.eq_zero _
-    }
-    retVals := fun u ↦
-      if h : BP.len = 0 then
-        0
-      else
-        let u' : Fin 5 := cast (by simp [toBP_nodes, h]) u
-        if u' = σ 0 then 1 else 0
+    LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2) where
+  depth := BP.len
+  nodes := BP.toBP_nodes
+  nodeVar := fun {k} _ ↦ BP.var k
+  edges := fun {k} u b ↦
+    if hk : k.val = 0 then
+      let p := if b = 1 then BP.perm1 k else BP.perm0 k
+      let dest : Fin 5 := p 0
+      cast (by unfold toBP_nodes; aesop) dest
+    else
+      let u' : Fin 5 := cast (by simp [toBP_nodes, hk]) u
+      let p := if b = 1 then BP.perm1 k else BP.perm0 k
+      p u'
+  startUnique := {
+    default := cast (by simp [toBP_nodes]) (0 : Fin 1)
+    uniq := fun x ↦ Fin.eq_zero _
   }
+  retVals := fun u ↦
+    if h : BP.len = 0 then
+      0
+    else
+      let u' : Fin 5 := cast (by simp [toBP_nodes, h]) u
+      if u' = σ 0 then 1 else 0
 
 /-
 The width of the converted branching program is at most 5.
@@ -592,7 +554,7 @@ theorem BP_of_FeedForward_computes {n : ℕ} (hn : n > 0)
 The permutation (0 1 2 3 4) is a 5-cycle.
 -/
 def sigma_five_cycle : Equiv.Perm (Fin 5) :=
-  Equiv.swap 0 1 * Equiv.swap 1 2 * Equiv.swap 2 3 * Equiv.swap 3 4
+  finRotate 5
 
 lemma sigma_five_cycle_is_cycle : sigma_five_cycle.IsCycle ∧ sigma_five_cycle.support.card = 5 := by
   simp +decide [Equiv.Perm.IsCycle]
@@ -634,7 +596,7 @@ theorem BP_of_FeedForward_len_aux {n : ℕ} (hn : n > 0)
 Convert a CircuitFamily to a BPFamily using Barrington's construction for n > 0. For n=0, return a trivial BP. For depth 0 circuits (n=1), return a variable BP.
 -/
 noncomputable def BP_of_CircuitFamily {out : Type} [Unique out]
-    (CF : CircuitFamily₁ (Fin 2) out) : BPFamily :=
+    (CF : CircuitFamily₁ (Fin 2) out) : BPFamily (Fin 2) :=
   fun n ↦
     if hn : n = 0 then
       -- Trivial BP for n=0. Just evaluate and return that.
@@ -662,13 +624,13 @@ noncomputable def BP_of_CircuitFamily {out : Type} [Unique out]
 The permutation (0 1 2 3 4) does not map 0 to 0.
 -/
 lemma sigma_five_cycle_zero_ne_zero : sigma_five_cycle 0 ≠ 0 := by
-  native_decide
+  decide
 
 /-
 The permutation (0 1 2 3 4) is not the identity.
 -/
 lemma sigma_five_cycle_ne_one : sigma_five_cycle ≠ 1 := by
-  decide +revert
+  decide
 
 /-
 Partial evaluation of a Barrington program using the first k instructions.
@@ -726,28 +688,23 @@ theorem BarringtonProgram.toBP_eval {n : ℕ} (BP : BarringtonProgram n) (σ : E
       rfl
     unfold toBP at * ; aesop;
   convert h_eval_last_layer using 2;
-  rw [ toBP_evalLayer_eq_eval_partial ];
-  · rw [ eval_eq_eval_partial ];
-  · norm_num;
+  rw [toBP_evalLayer_eq_eval_partial]
+  · rw [eval_eq_eval_partial]
+  · norm_num
   · linarith
-
-
-abbrev NC1 := NCi 1
 
 /-
 The branching program family constructed from a circuit family has width at most 5.
 -/
 theorem BarringtonProgram.of_CircuitFamily_hasWidth_five {out : Type} [Unique out]
     (CF : CircuitFamily₁ (Fin 2) out) :
-    (BP_of_CircuitFamily CF).hasWidth 5 := by
+    (BP_of_CircuitFamily CF).hasWidth (·≤5) := by
   intro n
-  rw [BP_of_CircuitFamily]
+  dsimp [BP_of_CircuitFamily]
   split_ifs with hn
   · simp [LayeredBranchingProgram.width]
-  · simp only [Fin.isValue]
-    split_ifs with h
-    · apply width_toBP
-    · apply width_toBP
+  · apply width_toBP
+  · apply width_toBP
 
 /-
 If a circuit family has logarithmic depth, the constructed branching program family has polynomial depth.
@@ -791,8 +748,8 @@ theorem FeedForward.gates_relabelOut_heq {α inp out a} (F : FeedForward α inp 
           omega
         )]
       ) n)) := by
-        generalize_proofs at *;
-        unfold FeedForward.relabelOut; aesop;
+  generalize_proofs at *;
+  unfold FeedForward.relabelOut; aesop;
 
 /-
 For any layer except the last one, the evaluation of a node in the relabeled circuit is the same as in the original circuit.
@@ -841,120 +798,53 @@ lemma FeedForward.Gate.eval_cast {α : Type u} {domain domain' : Type v}
   subst h
   rfl
 
-
 /-
 The size of a branching program in a family with bounded width is bounded by width * depth + 1.
 -/
-theorem BPFamily.size_le_bound (BPF : BPFamily) [BPF.Finite] (w : ℕ) (hw : BPF.hasWidth w) :
+theorem BPFamily.size_le_bound (BPF : BPFamily α) [BPF.Finite] (w : ℕ) (hw : BPF.hasWidth (·≤w)) :
     ∀ n, (BPF n).size ≤ w * (BPF n).depth + 1 := by
-      -- Apply the lemma that relates the size of a layer to its width and depth, and use the fact that the width is bounded by w.
-      intros n
-      have h_width : (BPF n).width ≤ w := by
-        exact hw n
-      have h_size : (BPF n).size ≤ (BPF n).width * (BPF n).depth + 1 := by
-        convert LayeredBranchingProgram.size_le_width_mul_depth _;
-        -- Since BPF is a family of finite branching programs, each BPF n is finite by definition.
-        apply (‹BPFamily.Finite BPF›).finite
-      exact h_size.trans (by
-      exact Nat.succ_le_succ ( Nat.mul_le_mul_right _ h_width ))
+  -- Apply the lemma that relates the size of a layer to its width and depth, and use the fact that the width is bounded by w.
+  intros n
+  have h_width : (BPF n).width ≤ w := by
+    exact hw n
+  have h_size : (BPF n).size ≤ (BPF n).width * (BPF n).depth + 1 := by
+    convert LayeredBranchingProgram.size_le_width_mul_depth _;
+    -- Since BPF is a family of finite branching programs, each BPF n is finite by definition.
+    apply (‹BPFamily.Finite BPF›).finite
+  exact h_size.trans (by
+  exact Nat.succ_le_succ ( Nat.mul_le_mul_right _ h_width ))
 
-/-
-Any constant function is in GrowthRate.poly.
--/
-theorem GrowthRate.poly_const (k : ℕ) : (fun _ ↦ k) ∈ GrowthRate.poly := by
-  use 0; simp
-  exact Filter.isBoundedUnder_const
+theorem GrowthRate.const_mem_const (k : ℕ) : (fun _ ↦ k) ∈ GrowthRate.const := by
+  simp [const, bigO]
+  use k
+  simp
 
-/-
-If f is in GrowthRate.poly, then w * f + c is in GrowthRate.poly.
--/
-theorem GrowthRate.poly_affine_closure (f : ℕ → ℕ) (w c : ℕ) (hf : f ∈ GrowthRate.poly) :
-    (fun n ↦ w * f n + c) ∈ GrowthRate.poly := by
-      -- Since `w * f` is a polynomial, we can apply `poly_mul` to get `w * f ∈ poly`.
-      have h_wf_poly : (fun n => w * f n) ∈ poly := by
-        convert GrowthRate.poly_mul ( GrowthRate.poly_const w ) hf using 1
-      generalize_proofs at *; (
-      convert GrowthRate.add h_wf_poly ( GrowthRate.poly_const c ) using 1) -- The `generalize_proofs` line is a placeholder for any additional proof steps that might be required.
-
-/-
-GrowthRate.poly is closed under multiplication by constants.
--/
-theorem GrowthRate.poly_mul_const (f : ℕ → ℕ) (k : ℕ) (hf : f ∈ GrowthRate.poly) :
-    (fun n ↦ f n * k) ∈ GrowthRate.poly := by
-      convert GrowthRate.poly_mul hf ( GrowthRate.poly_const k ) using 1
-
-/-
-GrowthRate.poly is closed under addition of constants.
--/
-theorem GrowthRate.poly_add_const (f : ℕ → ℕ) (k : ℕ) (hf : f ∈ GrowthRate.poly) :
-    (fun n ↦ f n + k) ∈ GrowthRate.poly := by
-      convert GrowthRate.add hf ( GrowthRate.poly_const k ) using 1
-
-/-
-If f is in GrowthRate.poly, then w * f + c is in GrowthRate.poly.
--/
-theorem GrowthRate.poly_affine_closure' (f : ℕ → ℕ) (w c : ℕ) (hf : f ∈ GrowthRate.poly) :
-    (fun n ↦ w * f n + c) ∈ GrowthRate.poly := by
-      convert GrowthRate.poly_add_const _ c ( GrowthRate.poly_mul_const _ w hf ) using 1 ; ring_nf
+lemma GrowthRate.affine_comp {S : GrowthRate} [LawfulGrowthRate S] {f : ℕ → ℕ} {a b : ℕ} (hf : f ∈ S) :
+    (fun n ↦ a * f n + b) ∈ S :=
+  GrowthRate.add
+    (GrowthRate.const_mul (GrowthRate.const_mem_const a) hf)
+    (GrowthRate.const_mem <| GrowthRate.const_mem_const b)
 
 /-
 If a branching program family has constant width and polynomial depth, it has polynomial size.
 -/
-theorem BPFamily.hasSize_poly_of_hasWidth_const_hasDepth_poly (BPF : BPFamily) [BPF.Finite]
-    (w : ℕ) (hw : BPF.hasWidth w) (hd : BPF.hasDepth GrowthRate.poly) :
+theorem BPFamily.hasSize_poly_of_hasWidth_const_hasDepth_poly (BPF : BPFamily α) [BPF.Finite]
+    (w : ℕ) (hw : BPF.hasWidth (·≤w)) (hd : BPF.hasDepth GrowthRate.poly) :
     BPF.hasSize GrowthRate.poly := by
-      -- Let `f(n) = (BPF n).depth`. We are given `f ∈ GrowthRate.poly` (by `hd`).
-      set f : ℕ → ℕ := fun n => (BPF n).depth
-      have hf : f ∈ GrowthRate.poly := hd;
-      -- Let `g(n) = w * f(n) + 1`. By `GrowthRate.poly_affine_closure'`, `g ∈ GrowthRate.poly`.
-      set g : ℕ → ℕ := fun n => w * f n + 1
-      have hg : g ∈ GrowthRate.poly := by
-        exact GrowthRate.poly_affine_closure' f w 1 hf;
-      -- Since `GrowthRate.poly` is a `LawfulGrowthRate`, we can use `LawfulGrowthRate.mem_dominating`.
-      have h_dominating : ∀ᶠ n in Filter.atTop, (BPF n).size ≤ g n := by
-        have := @BPFamily.size_le_bound BPF ‹_› w hw; aesop;
-      -- Apply the `LawfulGrowthRate.mem_dominating` lemma with `g` and `h`, since `g ∈ GrowthRate.poly` and `h` is dominated by `g`, we conclude `h ∈ GrowthRate.poly`.
-      have h_final : (fun n => (BPF n).size) ∈ GrowthRate.poly := by
-        have h_mem : (fun n => (BPF n).size) ≤ᶠ[Filter.atTop] g := h_dominating
-        exact GrowthRate.mem_dominating h_dominating hg;
-      exact h_final
-
-/-
-If a branching program family has constant width and polynomial depth, it has polynomial size.
--/
-theorem BPFamily.hasSize_poly_of_hasWidth_const_hasDepth_poly' (BPF : BPFamily) [BPF.Finite]
-    (w : ℕ) (hw : BPF.hasWidth w) (hd : BPF.hasDepth GrowthRate.poly) :
-    BPF.hasSize GrowthRate.poly := by
-      convert GrowthRate.poly_affine_closure' _ w 1 hd using 1;
-      unfold BPFamily.hasSize;
-      have := @GrowthRate.poly_affine_closure';
-      convert this _ _ 1 hd using 1;
-      swap;
-      exact w + 1;
-      constructor <;> intro h <;> simp_all +decide [ add_mul ];
-      · convert this _ ( w + 1 ) 1 hd using 1 ; ext ; ring;
-      · constructor <;> intro h' <;> have := h' <;> simp_all +decide [ add_assoc, add_comm, add_assoc ];
-        · convert GrowthRate.poly_affine_closure' _ w 1 hd using 1;
-        · have := @BPFamily.size_le_bound BPF ‹_› w hw;
-          (expose_names; exact GrowthRate.mono this_2 this)
-
-/-
-If a circuit in a CircuitFamily1 has depth 0, then the input size n must be 1.
--/
-lemma BP_of_CircuitFamily_depth_zero_eq_one {out : Type} [Unique out]
-    (CF : CircuitFamily₁ (Fin 2) out) (n : ℕ) (h : (CF n).depth = 0) : n = 1 := by
-  -- Since the depth is 0, the input layer is the same as the output layer. The input layer has type `Fin n` and the output layer has type `Unit`, so `Fin n` must be isomorphic to `Unit`.
-  have h_input_output : (CF n).nodes 0 ≃ Unit := by
-    -- Since the depth is 0, the circuit is just the input layer, which is `Fin n`. Therefore, the nodes at layer 0 are `Fin n`.
-    have h_input : (CF n).nodes 0 = (CF n).nodes (Fin.last (CF n).depth) := by
-      simpa using inp_eq_out_of_depth_zero h
-    simp_all only [FeedForward.nodes_zero, FeedForward.nodes_last]
-    rcases CF n with ⟨depth, nodes, gates, nodes_zero, rfl⟩
-    exact Equiv.ofUnique _ _
-  have h_card : Nat.card (Fin n) = Nat.card Unit := by
-    convert Nat.card_congr h_input_output using 1;
-    have := ( CF n ).nodes_zero; aesop;
-  simpa using h_card
+  -- Let `f(n) = (BPF n).depth`. We are given `f ∈ GrowthRate.poly` (by `hd`).
+  set f : ℕ → ℕ := fun n => (BPF n).depth
+  have hf : f ∈ GrowthRate.poly := hd;
+  -- Let `g(n) = w * f(n) + 1`. By `GrowthRate.poly_affine_closure'`, `g ∈ GrowthRate.poly`.
+  set g : ℕ → ℕ := fun n => w * f n + 1
+  have hg : g ∈ GrowthRate.poly := GrowthRate.affine_comp hf
+  -- Since `GrowthRate.poly` is a `LawfulGrowthRate`, we can use `LawfulGrowthRate.mem_dominating`.
+  have h_dominating : ∀ᶠ n in Filter.atTop, (BPF n).size ≤ g n := by
+    have := @BPFamily.size_le_bound _ BPF ‹_› w hw; aesop;
+  -- Apply the `LawfulGrowthRate.mem_dominating` lemma with `g` and `h`, since `g ∈ GrowthRate.poly` and `h` is dominated by `g`, we conclude `h ∈ GrowthRate.poly`.
+  have h_final : (fun n => (BPF n).size) ∈ GrowthRate.poly := by
+    have h_mem : (fun n => (BPF n).size) ≤ᶠ[Filter.atTop] g := h_dominating
+    exact GrowthRate.mem_dominating h_dominating hg;
+  exact h_final
 
 /-
 If a Barrington program computes a function f with permutation sigma, then its converted branching program computes f.
