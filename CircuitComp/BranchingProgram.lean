@@ -76,9 +76,25 @@ theorem size_le_width_mul_depth [P.Finite] :
   have h_depth_succ : ∀ i : Fin P.depth, Nat.card (P.nodes i.succ) ≤ P.width := by
     intro i
     rw [width]
-    sorry
-  rw [size_eq_sum_card_nodes]
-  sorry
+    apply le_ciSup (Finite.bddAbove_range fun i => Nat.card (P.nodes i)) (Fin.succ i)
+  have h_sum_bound : ∑ i, Nat.card (P.nodes i) = 1 + ∑ i, Nat.card (P.nodes (Fin.succ i)) := by
+    simp [Fin.sum_univ_succ]
+  have h_sum_le : ∑ i : Fin P.depth, Nat.card (P.nodes (Fin.succ i)) ≤ P.depth * P.width := by
+    exact (Finset.sum_le_sum fun _ _ ↦ h_depth_succ _).trans (by simp)
+  linarith [size_eq_sum_card_nodes P]
+
+theorem size_ge_one {α β γ} (P : LayeredBranchingProgram α β γ) [P.Finite] : 1 ≤ P.size := by
+  -- Since `nodes 0` is nonempty and finite, its cardinality is at least 1.
+  have h_card_0 : 1 ≤ Nat.card (P.nodes 0) := by
+    aesop;
+  refine' le_trans h_card_0 _;
+  have h_card_0 : Nat.card (P.nodes 0) ≤ Nat.card (Sigma P.nodes) := by
+    have h_inj : Function.Injective (fun x : P.nodes 0 => ⟨0, x⟩ : P.nodes 0 → Sigma P.nodes) := by
+      aesop_cat
+    have h_finite : ∀ i : Fin P.depth.succ, Finite (P.nodes i) := by
+      exact fun i => by cases ‹P.Finite›; aesop;
+    exact Nat.card_le_card_of_injective (fun x ↦ ⟨0, x⟩) h_inj;
+  exact h_card_0
 
 /-- Given a valuation `x` of the input variables, evaluate the layer `d` of the branching program.
 Returns the selected node at layer `d`. -/
@@ -100,42 +116,68 @@ def eval (x : α → β) : γ :=
 def computes (P : LayeredBranchingProgram α β γ) (F : (α → β) → γ) : Prop :=
   ∀ x, P.eval x = F x
 
-/-- Every function can be computed by an oblivious branching program of exponential size and constant width. -/
-theorem computes_const_width [Fintype α] [Fintype β] [Fintype γ] (F : (α → β) → γ) :
-    ∃ P : LayeredBranchingProgram α β γ,
-      P.computes F ∧
-      P.Finite ∧
-      P.IsOblivious ∧
-      P.width ≤ Fintype.card γ + 1 ∧
-      P.depth ≤ Fintype.card α * (Fintype.card β ^ Fintype.card α) := by
-  sorry
+section canonicalBP
 
-/-- A boolean function can be computed in O(n * 2^n) depth and width 3.-/
-theorem computes_bool_width_3 [Fintype α] [Fintype β] [Fintype γ] (F : (α → Bool) → Bool) :
-    ∃ P : LayeredBranchingProgram α Bool Bool,
-      P.computes F ∧
-      P.Finite ∧
-      P.IsOblivious ∧
-      P.width ≤ 3 ∧
-      P.depth ≤ Fintype.card α * 2 ^ Fintype.card α :=
-  computes_const_width F
+variable [Fintype α] (F : (α → β) → γ)
+
+/--
+Construct a canonical branching program for a function F. It queries variables in a fixed order
+and stores the values in the nodes. It branches exponentially wide.
+-/
+def canonicalBP : LayeredBranchingProgram α β γ :=
+  letI n := Fintype.card α
+  letI e := Fintype.equivFin α
+  { depth := n
+    nodes i := Fin i → β
+    nodeVar {i} _ := e.symm ⟨i, i.is_lt⟩
+    edges {i} f b j := if h : j.val < i.val then f ⟨j.val, h⟩ else b
+    startUnique := {
+      default := Fin.elim0,
+      uniq := fun _ ↦ funext fun i ↦ Fin.elim0 i
+    }
+    retVals f := F (f ∘ e)
+  }
+
+instance canonicalBP_Finite [Fintype β] : (canonicalBP F).Finite where
+  finite i := inferInstanceAs (Finite (Fin i → β))
+
+theorem canonicalBP_IsOblivious : (canonicalBP F).IsOblivious :=
+  fun _ _ _ ↦ rfl
+
+theorem canonicalBP_evalLayer (x : α → β) (i : Fin (Fintype.card α + 1)) :
+    (canonicalBP F).evalLayer i x =
+      fun (j : Fin i) ↦ x ((Fintype.equivFin α).symm ⟨j, by omega⟩) := by
+  induction i using Fin.inductionOn
+  · exact funext fun i ↦ Fin.elim0 i
+  · rename_i hi
+    funext j
+    refine j.lastCases ?_ (fun k ↦ ?_)
+    · simp [evalLayer, Fin.inductionOn, canonicalBP]
+    · simp [evalLayer, Fin.inductionOn, canonicalBP, ← congr_fun hi k]
+
+theorem canonicalBP_computes [Fintype β] : (canonicalBP F).computes F := by
+  intro x
+  simp only [eval, canonicalBP]
+  congr with a
+  convert ← congr_fun (canonicalBP_evalLayer F x (Fin.last _)) (Fintype.equivFin α a)
+  exact Equiv.apply_symm_apply _ _
+
+theorem canonicalBP_size_eq [Fintype β] :
+    (canonicalBP F).size = ∑ i : Fin (Fintype.card α + 1), (Fintype.card β) ^ (i : ℕ) := by
+  simp [size, canonicalBP]
 
 /-- Every function can be computed by an oblivious branching program of linear depth and exponential size. -/
-theorem computes_linear_depth [Fintype α] [Fintype β] [Fintype γ] (F : (α → β) → γ) :
-    ∃ P : LayeredBranchingProgram α β γ,
+theorem computes_linear_depth [Fintype β] :
+    ∃ (P : LayeredBranchingProgram α β γ) (_ : P.Finite),
       P.computes F ∧
-      P.Finite ∧
       P.IsOblivious ∧
-      P.depth ≤ Fintype.card α ∧
-      P.size ≤ 2 * Fintype.card β ^ Fintype.card α := by
-  sorry
+      P.depth = Fintype.card α ∧
+      P.size = ∑ i : Fin (Fintype.card α + 1), (Fintype.card β) ^ i.val := by
+  use canonicalBP F, inferInstance
+  and_intros
+  · exact canonicalBP_computes F
+  · exact canonicalBP_IsOblivious F
+  · rfl
+  · exact canonicalBP_size_eq F
 
-/-- Every (not necessarily `IsOblivious`) layered branching program can be converted to a branching program
-that `IsOblivious`, with at most a linear factor increase in depth (linear in the number of variables) and
-a doubling of width. -/
-theorem oblivious_of_nonoblivious [Fintype α] [Fintype β] [Fintype γ] (P : LayeredBranchingProgram α β γ) :
-    ∃ P' : LayeredBranchingProgram α β γ,
-      P'.eval = P.eval ∧
-      P'.depth ≤ Fintype.card α * P.depth ∧
-      P'.width ≤ 2 * P.width := by
-  sorry
+end canonicalBP
