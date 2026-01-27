@@ -180,7 +180,7 @@ instance [inst : BPFamily.Finite BPF] {n} : (BPF n).Finite :=
   inst.finite n
 
 /-- Predicate expressing that the size grows as O(f n). -/
-def BPFamily.hasSize (f : GrowthRate) [BPF.Finite] : Prop :=
+def BPFamily.hasSize (f : GrowthRate) : Prop :=
   (fun n ↦ (BPF n).size) ∈ f
 
 /-- Predicate expressing that the programs are oblivious. -/
@@ -196,6 +196,22 @@ def BPClass (width : GrowthRate) (depth : GrowthRate) (obliv : Bool) : Set (Func
     ∧ BPF.hasWidth width
     ∧ BPF.hasDepth depth
     ∧ (obliv → BPF.IsOblivious)
+
+variable [BPF.Finite] {w : ℕ}
+/--
+The size of a branching program in a family with bounded width is bounded by width * depth + 1.
+-/
+theorem BPFamily.size_le_bound (hw : BPF.hasWidth (·≤w)) :
+    ∀ n, (BPF n).size ≤ w * (BPF n).depth + 1 := by
+  intro n
+  grw [(BPF n).size_le_width_mul_depth, show (BPF n).width ≤ w from hw n]
+
+/--
+If a branching program family has constant width and polynomial depth, it has polynomial size.
+-/
+theorem BPFamily.hasSize_poly_of_width_depth (hw : BPF.hasWidth (·≤w)) (hd : BPF.hasDepth .poly) :
+    BPF.hasSize GrowthRate.poly :=
+  GrowthRate.mono (GrowthRate.affine_comp hd) (BPF.size_le_bound hw)
 
 end BPFamily
 

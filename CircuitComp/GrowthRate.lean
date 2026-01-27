@@ -160,7 +160,13 @@ end defs
 
 section basic
 
-/-
+/-- Constant functions are in the `GrowthRate.const` class. -/
+theorem const_mem_const (k : ℕ) : (fun _ ↦ k) ∈ GrowthRate.const := by
+  simp only [const, bigO, Pi.one_apply, Nat.cast_one, Asymptotics.isBigO_one_iff]
+  use k
+  simp
+
+/--
 If a function `f : ℕ → ℕ` has constant growth rate (i.e., is O(1)), then it is bounded by some constant `C`.
 -/
 lemma bounded_of_const {f : ℕ → ℕ} (h : f ∈ GrowthRate.const) : ∃ C, ∀ n, f n ≤ C := by
@@ -334,6 +340,10 @@ theorem linear_comp (hf : f ∈ linear) (hg : g ∈ S) : f ∘ g ∈ S := by
       exact h_mul C;
     exact mem_dominating ( Filter.Eventually.of_forall fun n ↦ by simpa using hC ( g n ) ) h_mul
 
+/-- LawfulGrowthRate is closed under linear transformations. -/
+lemma affine_comp {S : GrowthRate} [LawfulGrowthRate S] {f : ℕ → ℕ} {a b : ℕ} (hf : f ∈ S) :
+    (fun n ↦ a * f n + b) ∈ S :=
+  add (const_mul (const_mem_const a) hf) (const_mem (const_mem_const b))
 section instances
 
 def instLawfulBigO
