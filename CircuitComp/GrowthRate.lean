@@ -189,7 +189,7 @@ theorem bigO_add {f g a b: ℕ → ℕ} (hf : f ∈ bigO a) (hg : g ∈ bigO b) 
 
 end basic
 
-section lawful
+end GrowthRate
 
 /-- We call a `GrowthRate` *lawful* if it is closed under dominating sequences, addition, and
 composition with a sublinear function; and is nontrivial (it contains at least one function besides
@@ -207,6 +207,11 @@ class LawfulGrowthRate (S : GrowthRate) : Prop where
   comp_le_id {f g : ℕ → ℕ} (hf : f ∈ S) (hg : g ≤ id) : f ∘ g ∈ S
   /-- S contains the constant function 1. -/
   one_mem : 1 ∈ S
+
+namespace GrowthRate
+
+--Basic facts about lawful growth rates.
+section lawful
 
 alias mem_dominating := LawfulGrowthRate.mem_dominating
 alias add := LawfulGrowthRate.mem_add
@@ -307,8 +312,7 @@ theorem const_comp (hf : f ∈ const) (g) : f ∘ g ∈ const := by
 
 /-- Any LawfulGrowthRate is closed under linear transformation on the output. -/
 theorem linear_comp (hf : f ∈ linear) (hg : g ∈ S) : f ∘ g ∈ S := by
-  refine' ‹S.LawfulGrowthRate›.mem_dominating _ _;
-  refine' fun n ↦ ( f ∘ g ) n;
+  refine mem_dominating (f := fun n ↦ ( f ∘ g ) n) ?_ ?_
   · exact Filter.Eventually.of_forall fun _ ↦ le_rfl;
   · -- Since $f$ is in the linear growth rate, there exists a constant $C$ such that $f(n) \leq C \cdot n$ for all $n$.
     obtain ⟨C, hC⟩ : ∃ C, ∀ n, f n ≤ C * (n + 1) := by
@@ -322,13 +326,13 @@ theorem linear_comp (hf : f ∈ linear) (hg : g ∈ S) : f ∘ g ∈ S := by
     -- Since $g$ is in $S$, we have $C * (g n + 1)$ is also in $S$ because $S$ is closed under multiplication by a constant.
     have h_mul : (fun n ↦ C * (g n + 1)) ∈ S := by
       have h_mul : (fun n ↦ g n + 1) ∈ S := by
-        exact ‹S.LawfulGrowthRate›.mem_add hg ( by simpa using ‹S.LawfulGrowthRate›.one_mem );
+        exact add hg ( by simpa using one_mem );
       have h_mul : ∀ k : ℕ, (fun n ↦ k * (g n + 1)) ∈ S := by
         intro k; induction k <;> simp_all [ Nat.succ_mul ] ;
-        · exact ‹S.LawfulGrowthRate›.mem_dominating ( by norm_num ) ( ‹S.LawfulGrowthRate›.one_mem );
-        · exact ‹S.LawfulGrowthRate›.mem_add ‹_› ‹_›;
+        · exact mem_dominating ( by norm_num ) ( one_mem );
+        · exact add ‹_› ‹_›;
       exact h_mul C;
-    exact ‹S.LawfulGrowthRate›.mem_dominating ( Filter.Eventually.of_forall fun n ↦ by simpa using hC ( g n ) ) h_mul
+    exact mem_dominating ( Filter.Eventually.of_forall fun n ↦ by simpa using hC ( g n ) ) h_mul
 
 section instances
 

@@ -64,11 +64,15 @@ noncomputable def toLanguage : FuncFamily₁ Bool ≃ Language Bool where
     rw [Set.mem_setOf]
     simp
 
-noncomputable def toFuncFamily : FuncFamily₁ α ≃ FuncFamily α (fun _ ↦ Unit) where
+noncomputable def toFuncFamily (out : Type) [Unique out] :
+    FuncFamily₁ α ≃ FuncFamily α (fun _ ↦ out) where
   toFun f n xs _ := f n xs
-  invFun f n xs := f n xs ()
+  invFun f n xs := f n xs default
   left_inv _ := rfl
-  right_inv _ := rfl
+  right_inv _ := by
+    ext n xs
+    beta_reduce
+    rw [Unique.default_eq]
 
 /-- The problem AND: Compute the logical AND of the input bits. -/
 def AND : FuncFamily₁ (Fin 2) :=

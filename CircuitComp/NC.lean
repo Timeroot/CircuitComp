@@ -5,23 +5,28 @@ import Mathlib.Data.Nat.Log
 open FeedForward
 open CircuitFamily
 
-/-- A fairly minimal set of gates for NC classes: just NOT and AND. Technically, we also need the
+/-- A fairly minimal set of gates for NC classes: just NOT and AND. Technically, we should also take the
 identity gate (for forwarding operations between layers) and a constant gate (for the 0-ary case). -/
-def NC₀_GateOps : Set (GateOp (Fin 2)) :=
+def NC_GateOps : Set (GateOp (Fin 2)) :=
   {⟨Fin 0, 1⟩, --Constant one gate
    ⟨Fin 1, (· 0)⟩, --Id
    ⟨Fin 1, fun x ↦ 1 - x 0⟩, --NOT
   ⟨Fin 2, fun x ↦ x 0 * x 1⟩} --AND
 
+--TODO: We can drop Id (by using `x AND x`) with no penalty to depth or size.
+-- We can drop constant gates (by inlining) as long as the input is a nonempty type,
+-- but the empty type case is a pain and why we include constant gates. Showing that *adding* gates
+-- doesn't change the class is a separate question, see proof_wanted `NCi_other_gates` below.
+
 /-- The circuit class of nonuniform NC⁰: constant depth polynomial-size circuits with
 fanin-2 NOTs and ANDs. -/
 def NC₀ : Set (FuncFamily₁ (Fin 2)) :=
-  CircuitClass .poly .const NC₀_GateOps
+  CircuitClass .poly .const NC_GateOps
 
 /-- The circuit class of nonuniform NCi: polynomial-size circuits with
 NOTs and fanin-2 ANDs, and depth O(logⁱ n). -/
 def NCi (i : ℕ) : Set (FuncFamily₁ (Fin 2)) :=
-  CircuitClass .poly (.bigO (Nat.log2 · ^ i)) NC₀_GateOps
+  CircuitClass .poly (.bigO (Nat.log2 · ^ i)) NC_GateOps
 
 /-- NC₀ is the 0th element of the NCi hierarchy -/
 theorem NCi_zero : NCi 0 = NC₀ := by
@@ -33,14 +38,15 @@ def NC : Set (FuncFamily₁ (Fin 2)) :=
 theorem NCi_subset_NC (i : ℕ) : NCi i ⊆ NC :=
   Set.subset_iUnion_of_subset i fun _ ↦ id
 
-/-- All gates in `NC₀_GateOps` have fan-in at most 2. -/
-lemma NC₀_fanin_le_2 : ∀ op ∈ NC₀_GateOps, Finite op.ι ∧ Nat.card op.ι ≤ 2 := by
-  unfold NC₀_GateOps
+/-- All gates in `NC_GateOps` have fan-in at most 2. -/
+lemma NC₀_fanin_le_2 : ∀ op ∈ NC_GateOps, Finite op.ι ∧ Nat.card op.ι ≤ 2 := by
+  unfold NC_GateOps
   aesop (add safe Finite.of_fintype)
 
 /-- Any function family in NC₀ has a bounded arity (more precisely, a bounded size `EssDomain`). -/
 theorem bounded_essDomain_of_mem_NC₀ {fn : FuncFamily₁ (Fin 2)} (h : fn ∈ NC₀) :
     ∃ k, ∀ n, (fn n).EssDomain.ncard ≤ k := by
+  rw [NC₀, mem_circuitClass_iff Unit] at h
   obtain ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄, hCF₅⟩ := h
   obtain ⟨C, hC⟩ := GrowthRate.bounded_of_const hCF₄
   use 2 ^ C
@@ -66,13 +72,13 @@ theorem AND_not_mem_NC₀ : FuncFamily₁.AND ∉ NC₀ := by
 
 /-- The definition of NCi is unchanged if you add any larger *finite* set of
   *finite arity* gates. -/
-proof_wanted NCi_other_gates {i : ℕ} {S : Set (GateOp (Fin 2))} [Finite S] (hS : NC₀_GateOps ⊆ S)
+proof_wanted NCi_other_gates {i : ℕ} {S : Set (GateOp (Fin 2))} [Finite S] (hS : NC_GateOps ⊆ S)
     (hS₂ : ∀ s ∈ S, Finite s.ι) :
     NCi i = CircuitClass .poly (.bigO (Nat.log2 · ^ i)) S
 
 /-- Constructing the NC1 AND circuit for n > 0, with an output type of `Fin 1` for mathematical
 uniformity in the construction. -/
-def NC1_AND_CircuitFamily : CircuitFamily (Fin 2) (fun _ ↦ Fin 1) := fun n ↦
+def NC1_AND_CircuitFamily : CircuitFamily₁ (Fin 2) (Fin 1) := fun n ↦
   if hn : n = 0 then --The 0-bit input case
    ⟨1, --depth 1
     fun i ↦ Fin i.val, --width 1 on its only layer. width 0 at input.
@@ -125,51 +131,9 @@ def NC1_AND_CircuitFamily : CircuitFamily (Fin 2) (fun _ ↦ Fin 1) := fun n ↦
       use by positivity
       exact div_le_one_of_le₀ (mod_cast Nat.le_pow_clog one_lt_two _) (by positivity)⟩
 
-def NC1_AND_CircuitFamily₁ : CircuitFamily₁ (Fin 2) := fun n ↦
-  if hn : n = 1 then
-    ⟨1, fun i ↦ if i = 0 then Fin 1 else Unit,
-      fun _ _ ↦ ⟨⟨Fin 1, (· 0)⟩, fun _ ↦ cast (by subst n; simp; grind) (0 : Fin 1)⟩,
-      by subst n; rfl, by subst n; rfl⟩
-  else
-    (NC1_AND_CircuitFamily n).relabelOut (by
-      rw [NC1_AND_CircuitFamily]
-      split
-      · simp
-      · exact (Nat.clog_pos (by omega) (by omega)).ne'
-      ) (Equiv.ofUnique _ _)
-
-instance {α β γ} {CF : CircuitFamily α β} [inst : CF.Finite] (n : ℕ) (hf : (CF n).depth ≠ 0) (e : β n ≃ γ) :
-    ((CF n).relabelOut hf e).Finite := by
-  constructor; intro i
-  unfold relabelOut
-  simp only
-  split_ifs
-  · rw [← e.finite_iff, ← (CF n).nodes_last]
-    apply (inst.finite n).finite
-  · apply (inst.finite n).finite
-
 instance : NC1_AND_CircuitFamily.Finite := by
-  constructor
-  intro n
-  constructor
-  intro i
-  simp [NC1_AND_CircuitFamily]
-  split_ifs with hn
-  · subst n
-    simpa using Finite.of_fintype (Fin ↑i)
-  · sorry
-
-instance : NC1_AND_CircuitFamily₁.Finite := by
-  constructor
-  intro n
-  rw [NC1_AND_CircuitFamily₁]
-  split_ifs with hn
-  · subst n
-    constructor
-    intro i
-    dsimp
-    split <;> infer_instance
-  · infer_instance
+  refine ⟨fun n ↦ ⟨fun i ↦ ?_⟩⟩
+  cases n <;> simpa [NC1_AND_CircuitFamily] using Finite.of_fintype _
 
 noncomputable section AristotleLemmas
 /-
@@ -305,8 +269,8 @@ theorem NC1_AND_Circuit_pos_evalNode (n : ℕ) (hn : 0 < n) (inputs : Fin n → 
     exact IH
 end AristotleLemmas
 
-theorem NC1_AND_CircuitFamily_computes : NC1_AND_CircuitFamily₁.computes₁ FuncFamily₁.AND := by
-  unfold NC1_AND_CircuitFamily₁ NC1_AND_CircuitFamily CircuitFamily₁.computes₁;
+theorem NC1_AND_CircuitFamily_computes : NC1_AND_CircuitFamily.computes₁ FuncFamily₁.AND := by
+  unfold NC1_AND_CircuitFamily CircuitFamily₁.computes₁
   intro n; by_cases hn : n = 0
   · bound;
   · simp [hn]
@@ -315,8 +279,9 @@ theorem NC1_AND_CircuitFamily_computes : NC1_AND_CircuitFamily₁.computes₁ Fu
     convert NC1_AND_Circuit_pos_evalNode n ( Nat.pos_of_ne_zero hn ) xs ⟨ Nat.clog 2 n, Nat.lt_succ_self _ ⟩ ⟨ 0, Nat.pos_of_ne_zero _ ⟩;
     all_goals norm_num [ target_prod ];
     · convert congr_arg Fin.val ( show (_ : Fin 1) = 0 from Fin.ext <| by aesop );
-      simp
-      sorry
+      rw [ Nat.ceil_eq_iff ] <;> norm_num;
+      field_simp;
+      exact ⟨ Nat.pos_of_ne_zero hn, mod_cast Nat.le_pow_clog ( by decide ) _ ⟩;
     · rw [ min_eq_right ];
       · simp [Finset.prod_range]
       · exact Nat.le_pow_clog ( by decide ) _;
@@ -324,10 +289,9 @@ theorem NC1_AND_CircuitFamily_computes : NC1_AND_CircuitFamily₁.computes₁ Fu
 
 noncomputable section AristotleLemmas
 
-lemma NC1_AND_size_mem_poly : (fun n ↦ (NC1_AND_CircuitFamily n).size) ∈ GrowthRate.poly := by
-  refine' ⟨ 1, _ ⟩;
-  rw [ Asymptotics.isBigO_iff ] ; norm_num;
-  use 4, 1;
+lemma NC1_AND_size_mem_poly : (fun n ↦ (NC1_AND_CircuitFamily n).size) ∈ GrowthRate.linear := by
+  simp [GrowthRate.linear, GrowthRate.bigO, Asymptotics.isBigO_iff ]
+  use 4, 1
   intro b hb; norm_cast; rcases eq_or_ne b 0 <;> simp_all +decide [ NC1_AND_CircuitFamily ] ;
   -- Let's simplify the expression for the size.
   have h_size : ∑ x ∈ Finset.range (Nat.clog 2 b), ⌈(b : ℚ) / 2 ^ (x + 1)⌉₊ ≤ b * (∑ x ∈ Finset.range (Nat.clog 2 b), (1 / 2 : ℚ) ^ (x + 1)) + Nat.clog 2 b := by
@@ -375,61 +339,24 @@ lemma NC1_AND_depth_mem_log : (fun n ↦ (NC1_AND_CircuitFamily n).depth) ∈ Gr
 
 end AristotleLemmas
 
-theorem NC1_AND₁_depth_mem_log : NC1_AND_CircuitFamily₁.hasDepth
-    (GrowthRate.bigO fun x ↦ x.log2 ^ 1) := by
-  convert NC1_AND_depth_mem_log using 1
-  simp only [GrowthRate.bigO, hasDepth, NC1_AND_CircuitFamily₁, relabelOut, Set.mem_setOf_eq,
-    Asymptotics.isBigO_iff]
-  congr! 2 with c
-  apply Filter.eventually_congr
-  filter_upwards [Filter.eventually_ne_atTop 1]
-  simp +contextual
+theorem NC1_AND_hasDepth_mem_log : NC1_AND_CircuitFamily.hasDepth GrowthRate.log := by
+  rw [← GrowthRate.bigO_log2_eq_log]
+  exact NC1_AND_depth_mem_log
 
 noncomputable section AristotleLemmas
 
-lemma FeedForward.size_relabelOut {α inp out a} (F : FeedForward α inp out) (hF : F.depth ≠ 0) (e : out ≃ a) :
-    (F.relabelOut hF e).size = F.size := by
-      unfold FeedForward.size at *;
-      simp +decide [ Nat.card ];
-      -- Since the relabeling only affects the last layer's nodes, and we're summing over all layers, this shouldn't change the total sum. Therefore, the two sums should be equal.
-      have h_sum_eq : ∀ i : Fin F.depth, Cardinal.mk (if i.succ = Fin.last F.depth then a else F.nodes i.succ) = Cardinal.mk (F.nodes i.succ) := by
-        intro i; split_ifs <;> simp_all +decide [ Fin.ext_iff ] ;
-        rw [ show F.nodes i.succ = out from _ ];
-        · exact Cardinal.mk_congr e.symm;
-        · convert F.nodes_last;
-          exact Fin.ext ( by simp +decide [ * ] );
-      grind
-
-lemma NC1_AND₁_size_eq (n : ℕ) (h : n ≠ 1) :
-    (NC1_AND_CircuitFamily₁ n).size = (NC1_AND_CircuitFamily n).size := by
-  simp only [NC1_AND_CircuitFamily₁, h, not_false_iff, dif_neg]
-  apply FeedForward.size_relabelOut
-
-lemma FeedForward.finite_relabelOut {α inp out a} (F : FeedForward α inp out) (hF : F.depth ≠ 0) (e : out ≃ a) [Finite a] (h_fin : F.Finite) :
-    (F.relabelOut hF e).Finite := by
-  constructor; intro i
-  unfold relabelOut
-  simp only
-  split_ifs
-  · infer_instance
-  · apply h_fin.finite
-
-lemma nat_ceil_le_add_one_of_nonneg {q : ℚ} (hq : 0 ≤ q) : (Nat.ceil q : ℝ) ≤ q + 1 := by
-  -- By definition of ceiling, we know that ⌈q⌉₊ ≤ q + 1.
-  apply le_of_lt; exact_mod_cast Nat.ceil_lt_add_one hq
-
 lemma sum_ceil_div_two_pow_le (n d : ℕ) :
     ∑ i ∈ Finset.range d, ⌈(n : ℚ) / 2^(i+1)⌉₊ ≤ n + d := by
-      rw [ add_comm, ← Nat.cast_le ( α := ℚ ) ];
-      -- The sum of the terms $n / (2^i)$ from $i=0$ to $d-1$ is a geometric series with sum $n * (1 - (1/2)^d) / (1 - 1/2) = 2n * (1 - (1/2)^d)$.
-      have h_geo_sum : ∑ i ∈ Finset.range d, (n : ℚ) / 2 ^ (i + 1) = 2 * n * (1 - (1 / 2 : ℚ) ^ d) / 2 := by
-        ring_nf
-        rw [← Finset.sum_mul, ← Finset.mul_sum, geom_sum_eq] <;> ring_nf
-        norm_num
-      have h_geo_sum_le : ∑ i ∈ Finset.range d, ⌈(n : ℚ) / 2 ^ (i + 1)⌉₊ ≤ ∑ i ∈ Finset.range d, (n : ℚ) / 2 ^ (i + 1) + d := by
-        push_cast;
-        exact le_trans ( Finset.sum_le_sum fun _ _ => Nat.ceil_lt_add_one ( by positivity ) |> le_of_lt ) ( by simp +decide [ Finset.sum_add_distrib ] );
-      exact h_geo_sum_le.trans ( by rw [ h_geo_sum ] ; push_cast; nlinarith [ show ( 1 / 2 : ℚ ) ^ d ≥ 0 by positivity ] )
+  rw [ add_comm, ← Nat.cast_le (α := ℚ )]
+  -- The sum of the terms $n / (2^i)$ from $i=0$ to $d-1$ is a geometric series with sum $n * (1 - (1/2)^d) / (1 - 1/2) = 2n * (1 - (1/2)^d)$.
+  have h_geo_sum : ∑ i ∈ Finset.range d, (n : ℚ) / 2 ^ (i + 1) = 2 * n * (1 - (1 / 2 : ℚ) ^ d) / 2 := by
+    ring_nf
+    rw [← Finset.sum_mul, ← Finset.mul_sum, geom_sum_eq] <;> ring_nf
+    norm_num
+  have h_geo_sum_le : ∑ i ∈ Finset.range d, ⌈(n : ℚ) / 2 ^ (i + 1)⌉₊ ≤ ∑ i ∈ Finset.range d, (n : ℚ) / 2 ^ (i + 1) + d := by
+    push_cast;
+    exact le_trans ( Finset.sum_le_sum fun _ _ => Nat.ceil_lt_add_one ( by positivity ) |> le_of_lt ) ( by simp +decide [ Finset.sum_add_distrib ] );
+  exact h_geo_sum_le.trans ( by rw [ h_geo_sum ] ; push_cast; nlinarith [ show ( 1 / 2 : ℚ ) ^ d ≥ 0 by positivity ] )
 
 lemma NC1_AND_size_bound (n : ℕ) : (NC1_AND_CircuitFamily n).size ≤ n + Nat.clog 2 n + 1 := by
   by_contra h;
@@ -441,46 +368,17 @@ lemma NC1_AND_size_bound (n : ℕ) : (NC1_AND_CircuitFamily n).size ≤ n + Nat.
 
 end AristotleLemmas
 
-set_option maxHeartbeats 10000000 in
-theorem AND_mem_NCi_1.extracted_1_4 :
-  (fun x ↦ (Nat.card
-    ((d : Fin (NC1_AND_CircuitFamily₁ x).depth) × (NC1_AND_CircuitFamily₁ x).nodes d.succ) : ℤ)) =O[Filter.atTop]
-    fun x ↦ (x : ℤ) := by
-  simp [NC1_AND_CircuitFamily₁, NC1_AND_CircuitFamily, relabelOut]
-  rw [ Asymptotics.isBigO_iff ];
-  use 2; filter_upwards [ Filter.eventually_ne_atTop 0, Filter.eventually_ne_atTop 1 ] with x hx hx'; norm_num [ hx, hx' ] ;
-  split_ifs at * <;> norm_cast at * ; simp_all
-  convert le_trans ( NC1_AND_size_bound x ) _ using 1;
-  · convert NC1_AND₁_size_eq x ( by tauto ) using 1;
-  · have h_log : Nat.clog 2 x ≤ x - 1 := by
-      rcases x with ( _ | _ | x ) <;> simp_all [ Nat.clog_of_two_le ];
-      rw [ Nat.clog ];
-      split_ifs <;> norm_num;
-      refine' Nat.succ_le_of_lt ( Nat.lt_of_le_of_lt ( Nat.clog_mono_right _ _ ) _ );
-      exact 2 ^ ( x - 1 );
-      · rcases x with ( _ | _ | x ) <;> simp_all +arith [ Nat.pow_succ ];
-        exact Nat.div_le_of_le_mul <| by linarith [ Nat.div_mul_le_self ( x + 5 ) 2, show 2 ^ x ≥ x + 1 from Nat.recOn x ( by norm_num ) fun n ihn => by rw [ pow_succ' ] ; linarith [ ihn, Nat.one_le_pow n 2 zero_lt_two ] ] ;
-      · rw [ Nat.clog_pow ] <;> norm_num;
-        omega;
-    linarith [ Nat.sub_add_cancel ( Nat.one_le_iff_ne_zero.mpr hx ) ]
-
 /-- The AND problem is contained in NC₁, because we can make a log-depth tree of ANDs. -/
 theorem AND_mem_NCi_1 : FuncFamily₁.AND ∈ NCi 1 := by
-  refine ⟨NC1_AND_CircuitFamily₁, inferInstance, ?_, ?_, ?_, ?_⟩
+  simp_rw [NCi, pow_one, GrowthRate.bigO_log2_eq_log, mem_circuitClass_iff (Fin 1)]
+  refine ⟨NC1_AND_CircuitFamily, inferInstance, ?_, ?_, ?_, ?_⟩
   · exact NC1_AND_CircuitFamily_computes
-  · use 1
-    simp_rw [pow_one]
-    exact AND_mem_NCi_1.extracted_1_4
-  · exact NC1_AND₁_depth_mem_log
+  · open GrowthRate in exact
+      quasilinear_subset_poly
+      <| linearithmic_subset_quasilinear
+      <| linear_subset_linearithmic
+      <| NC1_AND_size_mem_poly
+  · exact NC1_AND_hasDepth_mem_log
   · intro n d node
-    rcases n with _ | _ | n
-    · simp only [NC₀_GateOps, NC1_AND_CircuitFamily₁, NC1_AND_CircuitFamily, relabelOut]
-      grind
-    · simp [NC₀_GateOps, NC1_AND_CircuitFamily₁]
-    · simp [NC1_AND_CircuitFamily₁, FeedForward.relabelOut]
-      split_ifs with h₁
-      · exact absurd h₁ (Fin.castSucc_lt_last d).ne
-      have h_gates (d node) : ((NC1_AND_CircuitFamily (n + 2)).gates d node).op ∈ NC₀_GateOps := by
-        simp [NC1_AND_CircuitFamily]
-        split_ifs <;> simp [*, NC₀_GateOps]
-      grind
+    simp only [NC1_AND_CircuitFamily]
+    cases n <;> grind [NC_GateOps]

@@ -79,6 +79,10 @@ def eval (xs : inp → α) : out → α :=
 def eval₁ [Unique out] (xs : inp → α) : α :=
   F.eval xs default
 
+theorem eval₁_eq_eval [Unique out] (xs : inp → α) (o : out):
+    F.eval₁ xs = F.eval xs o := by
+  rw [eval₁, Unique.default_eq]
+
 /-- Relabel the input type of a `FeedForward` given an `Equiv`. -/
 def relabelIn (hF : F.depth ≠ 0) (e : inp ≃ a) : FeedForward α a out :=
   have : NeZero F.depth := ⟨hF⟩
@@ -114,6 +118,9 @@ def relabelOut (hF : F.depth ≠ 0) (e : out ≃ a) : FeedForward α inp a :=
 theorem relabelOut_depth (hf : F.depth ≠ 0) (e : out ≃ inp) :
     (F.relabelOut hf e).depth = F.depth := by
   rfl
+
+def perm {t1 t2} (e : t1 ≃ t2) : FeedForward α t1 t2 :=
+  sorry
 
 /-- Compose two `FeedForward`s by stacking one on top of the other. -/
 def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : FeedForward α a c where
@@ -346,6 +353,13 @@ protected class Finite : Prop where
 instance [inst : F.Finite] {i} : Finite (F.nodes i) :=
   inst.finite i
 
+instance {t1 t2} (e : t1 ≃ t2) : FeedForward.Finite (perm (α := α) e) := by
+  sorry
+
+instance {t1} (F₁ : FeedForward α inp t1) (F₂ : FeedForward α t1 out) :
+    FeedForward.Finite (F₂.comp F₁) := by
+  sorry
+
 /-- A `FeedForward` is said to `onlyUsesGates` from a set of `GateOp`s if every gate is one of those. -/
 def onlyUsesGates (S : Set (GateOp α)) : Prop :=
   ∀ d n, (F.gates d n).op ∈ S
@@ -441,8 +455,18 @@ The `n`th circuit must have input type `Fin n`, and a `Fin 1` output. -/
 def CircuitFamily (α : Type u) (out : ℕ → Type) :=
   (n : ℕ) → FeedForward α (Fin n) (out n)
 
-abbrev CircuitFamily₁ (α : Type u) :=
- CircuitFamily α (fun _ ↦ Unit)
+/-- Abbreviation for `CircuitFamily` where the output is a single value. Note that for universe
+reasons about the types inside the circuit, this means that the output type `out` must be in
+`Type` and not a higher universe. In principle this is not an issue, since it always has
+cardinality 1.
+
+Letting `out` vary rather than be fixed (to a `Unit` or `Fin 1`) makes it easier
+to work with more uniform constructions: for instance, a circuit could have nodes of type
+`Fin i → Fin 2` at depth `i` from the end, which would end in the `Unique` type `Fin 0 → Fin 2`
+for the final layer. If we requirea `Unit` out, then we would need to do a relabelling at the
+end, complicating the types significantly. -/
+abbrev CircuitFamily₁ (α : Type u) (out) [Unique out] :=
+  CircuitFamily α (fun _ ↦ out)
 
 namespace CircuitFamily
 
@@ -471,20 +495,42 @@ def hasSize (f : GrowthRate) [CF.Finite]: Prop :=
 def onlyUsesGates (S : Set (GateOp α)) : Prop :=
   ∀ n, (CF n).onlyUsesGates S
 
+@[simp]
+lemma FeedForward.size_relabelOut {α inp out a} (F : FeedForward α inp out) (hF : F.depth ≠ 0) (e : out ≃ a) :
+    (F.relabelOut hF e).size = F.size := by
+  unfold FeedForward.size at *;
+  simp +decide [ Nat.card ];
+  -- Since the relabeling only affects the last layer's nodes, and we're summing over all layers, this shouldn't change the total sum. Therefore, the two sums should be equal.
+  have h_sum_eq : ∀ i : Fin F.depth, Cardinal.mk (if i.succ = Fin.last F.depth then a else F.nodes i.succ) = Cardinal.mk (F.nodes i.succ) := by
+    intro i; split_ifs <;> simp_all +decide [ Fin.ext_iff ] ;
+    rw [ show F.nodes i.succ = out from _ ];
+    · exact Cardinal.mk_congr e.symm;
+    · convert F.nodes_last;
+      exact Fin.ext ( by simp +decide [ * ] );
+  grind
+
+instance {α inp out a} (F : FeedForward α inp out) (hF : F.depth ≠ 0) (e : out ≃ a) [Finite a] [F.Finite] :
+    (F.relabelOut hF e).Finite := by
+  constructor; intro i
+  dsimp only [relabelOut]
+  split_ifs
+  · infer_instance
+  · infer_instance
+
 end CircuitFamily
 
 namespace CircuitFamily₁
 
-variable {α : Type u} {inp out : Type v} (CF : CircuitFamily₁ α)
+variable {α : Type u} {out : Type} [Unique out] (CF : CircuitFamily₁ α out)
 
 /-- A `CircuitFamily₁` is said to `computes` a function family if that is given by its `eval₁`.-/
 def computes₁ (F : FuncFamily₁ α) : Prop :=
   ∀ n, (CF n).eval₁ = F n
 
 theorem computes_iff_computes₁ (F : FuncFamily₁ α) :
-    CF.computes₁ F ↔ CircuitFamily.computes CF F.toFuncFamily := by
+    CF.computes₁ F ↔ CircuitFamily.computes CF (F.toFuncFamily out):= by
   constructor <;> intro h n <;> funext
-  · rw [FuncFamily₁.toFuncFamily, Equiv.coe_fn_mk, ← h, eval₁]
+  · rw [FuncFamily₁.toFuncFamily, Equiv.coe_fn_mk, ← h, eval₁_eq_eval]
   · simp [CircuitFamily.computes, FuncFamily₁.toFuncFamily] at h
     rw [eval₁, h n]
 
@@ -508,29 +554,88 @@ end CircuitFamily₁
 open CircuitFamily₁
 
 /-- A `CircuitClass` is a set of function families defined by circuits on a given set of gates,
-a bound on depth, and a bound on size. -/
+a bound on depth, and a bound on size. This definition lets `out` be any type we like. -/
 def CircuitClass {α : Type*} (size : GrowthRate) (depth : GrowthRate) (gates : Set (GateOp α))
     : Set (FuncFamily₁ α) :=
-  fun fs ↦ ∃ (CF : CircuitFamily₁ α) (_ : CF.Finite),
+  fun fs ↦ ∃ (out : Type) (_ : Unique out) (CF : CircuitFamily₁ α out) (_ : CF.Finite),
     CF.computes₁ fs
     ∧ CF.hasSize size
     ∧ CF.hasDepth depth
     ∧ CF.onlyUsesGates gates
 
-namespace CircuitClass
+section circuitClass
 
 variable {α : Type*} (size : GrowthRate) (depth : GrowthRate) (gates : Set (GateOp α))
+variable (fs : FuncFamily₁ α)
 
-theorem Monotone_size : Monotone fun s ↦ CircuitClass s depth gates := by
-  rintro s₁ s₂ hs fs ⟨CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
-  exact ⟨CF, h_fin, h_comp, hs h_size, h_depth, h_gates⟩
+theorem CircuitClass.Monotone_size : Monotone (CircuitClass · depth gates) := by
+  rintro s₁ s₂ hs fs ⟨o, u, CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
+  exact ⟨o, u, CF, h_fin, h_comp, hs h_size, h_depth, h_gates⟩
 
-theorem Monotone_depth : Monotone fun d ↦ CircuitClass size d gates := by
-  rintro d₁ d₂ hd fs ⟨CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
-  exact ⟨CF, h_fin, h_comp, h_size, hd h_depth, h_gates⟩
+theorem CircuitClass.Monotone_depth : Monotone (CircuitClass size · gates) := by
+  rintro d₁ d₂ hd fs ⟨o, u, CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
+  exact ⟨o, u, CF, h_fin, h_comp, h_size, hd h_depth, h_gates⟩
 
-theorem Monotone_gates : Monotone fun (g : Set (GateOp α)) ↦ CircuitClass size depth g := by
-  rintro g₁ g₂ hg fs ⟨CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
-  exact ⟨CF, h_fin, h_comp, h_size, h_depth, onlyUsesGates_mono hg h_gates⟩
+theorem CircuitClass.Monotone_gates : Monotone (CircuitClass (α := α) size depth ·) := by
+  rintro g₁ g₂ hg fs ⟨o, u, CF, h_fin, h_comp, h_size, h_depth, h_gates⟩
+  exact ⟨o, u, CF, h_fin, h_comp, h_size, h_depth, onlyUsesGates_mono hg h_gates⟩
 
-end CircuitClass
+theorem mem_circuitClass_iff_exists_out : fs ∈ CircuitClass size depth gates ↔
+    ∃ (out : Type) (_ : Unique out),
+      ∃ (CF : CircuitFamily₁ α out) (_ : CF.Finite),
+        CF.computes₁ fs
+        ∧ CF.hasSize size
+        ∧ CF.hasDepth depth
+        ∧ CF.onlyUsesGates gates := by
+  rfl
+
+--We want to say that the choice of output type doesn't matter, so long as it's unique.
+--There's a stupid catch though: what if `depth` is zero at some n? Then the only
+--circuits (for that n) we have are those where the input and output depth are the same,
+--so it's actually not true that the choice of output type doesn't matter. With an appropriate
+--nontrivialy condition, we can rule out this case: just add an extra gate at the end
+--that changes the output type to the desired one. This extra gate has size and depth 1,
+--so it suffices to assunme that depth and size are `LawfulGrowthRate`.
+
+variable [LawfulGrowthRate size] [LawfulGrowthRate depth]
+
+theorem mem_circuitClass_iff_forall_out : fs ∈ CircuitClass size depth gates ↔
+  ∀ (out : Type) [Unique out],
+    ∃ (CF : CircuitFamily₁ α out) (_ : CF.Finite),
+      CF.computes₁ fs
+      ∧ CF.hasSize size
+      ∧ CF.hasDepth depth
+      ∧ CF.onlyUsesGates gates := by
+  rw [mem_circuitClass_iff_exists_out]
+  refine ⟨?_, fun h ↦ ⟨Unit, _, h Unit⟩⟩
+  intro ⟨out, u, CF, h_fin, h_comp, h_size, h_depth, h_gates⟩ out₂ _
+  use fun n ↦ (perm (Equiv.ofUnique out out₂)).comp (CF n)
+  use ⟨inferInstance⟩
+  and_intros
+  · simp [computes₁]
+    --eval₁ of comp
+    sorry
+  · simp [hasSize, CircuitFamily.hasSize]
+    --size of comp
+    sorry
+  · simp [hasDepth, CircuitFamily.hasDepth]
+    --already have depth of 1. Need perm.depth, and then use `add_const` of LawfulGrowthRate.
+    sorry
+  · --onlyUsesGates of comp
+    sorry
+
+variable {size depth gates fs} in
+theorem mem_circuitClass_iff (out : Type) [Unique out] :
+  fs ∈ CircuitClass size depth gates ↔
+    ∃ (CF : CircuitFamily₁ α out) (_ : CF.Finite),
+        CF.computes₁ fs
+        ∧ CF.hasSize size
+        ∧ CF.hasDepth depth
+        ∧ CF.onlyUsesGates gates := by
+  constructor
+  · rw [mem_circuitClass_iff_forall_out]
+    exact fun h ↦ h out
+  · rw [mem_circuitClass_iff_exists_out]
+    exact fun h ↦ ⟨out, _, h⟩
+
+end circuitClass
