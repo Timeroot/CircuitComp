@@ -11,98 +11,66 @@ variable {α : Type u} {β : Type v} {γ : Type w}
 open LayeredBranchingProgram
 
 /-
-Define BarringtonProgram and its evaluation.
+Define BarringtonProgram and its evaluation. The type `g` is typically a group (but in general
+just needs some multiplicative structure). The types `perm0` and `perm1` are used depending on
+the value of each variable, indexed by the types `α`.
 -/
-structure BarringtonProgram (n : ℕ) where
+structure BarringtonProgram (α : Type u) (G : Type v) where
   len : ℕ
-  var : Fin len → Fin n
-  perm0 : Fin len → Equiv.Perm (Fin 5)
-  perm1 : Fin len → Equiv.Perm (Fin 5)
+  var : Fin len → α
+  perm0 : Fin len → G
+  perm1 : Fin len → G
 
 namespace BarringtonProgram
 
-def eval {n : ℕ} (BP : BarringtonProgram n) (x : Fin n → Fin 2) : Equiv.Perm (Fin 5) :=
+variable {α : Type u} {G : Type v} (BP BP1 BP2 : BarringtonProgram α G)
+
+def eval [Mul G] [One G] (x : α → Fin 2) : G :=
   (List.finRange BP.len).foldl (fun acc i ↦
     let p := if x (BP.var i) = 1 then BP.perm1 i else BP.perm0 i
-    p * acc) 1
+    p * acc) (1 : G)
 
-def computes {n : ℕ} (BP : BarringtonProgram n) (f : (Fin n → Fin 2) → Fin 2) (σ : Equiv.Perm (Fin 5)) : Prop :=
+def computes [Mul G] [One G] (f : (α → Fin 2) → Fin 2) (σ : G) : Prop :=
   σ ≠ 1 ∧ ∀ x, BP.eval x = if f x = 1 then σ else 1
 
-/-
-Define the nodes for the converted branching program. Layer 0 has 1 node, others have 5.
+/--
+The concatenation of two Barrington programs and prove that the evaluation of the
+concatenated program is the product of the evaluations (note the order due to function
+composition/multiplication convention).
 -/
-def toBP_nodes {n : ℕ} (BP : BarringtonProgram n) (i : Fin (BP.len + 1)) : Type :=
-  if i.val = 0 then Fin 1 else Fin 5
+def append : BarringtonProgram α G where
+  len := BP1.len + BP2.len
+  var := Fin.append BP1.var BP2.var
+  perm0 := Fin.append BP1.perm0 BP2.perm0
+  perm1 := Fin.append BP1.perm1 BP2.perm1
 
-/-
-Define the conversion from a Barrington Program to a Layered Branching Program. Explicitly handle types to avoid ambiguity.
--/
-def toBP {n : ℕ} (BP : BarringtonProgram n) (σ : Equiv.Perm (Fin 5)) :
-    LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2) where
-  depth := BP.len
-  nodes := BP.toBP_nodes
-  nodeVar := fun {k} _ ↦ BP.var k
-  edges := fun {k} u b ↦
-    if hk : k.val = 0 then
-      let p := if b = 1 then BP.perm1 k else BP.perm0 k
-      let dest : Fin 5 := p 0
-      cast (by unfold toBP_nodes; aesop) dest
-    else
-      let u' : Fin 5 := cast (by simp [toBP_nodes, hk]) u
-      let p := if b = 1 then BP.perm1 k else BP.perm0 k
-      p u'
-  startUnique := {
-    default := cast (by simp [toBP_nodes]) (0 : Fin 1)
-    uniq := fun x ↦ Fin.eq_zero _
-  }
-  retVals := fun u ↦
-    if h : BP.len = 0 then
-      0
-    else
-      let u' : Fin 5 := cast (by simp [toBP_nodes, h]) u
-      if u' = σ 0 then 1 else 0
-
-/-
-The width of the converted branching program is at most 5.
--/
-theorem width_toBP {n : ℕ} (BP : BarringtonProgram n) (σ : Equiv.Perm (Fin 5)) : (BP.toBP σ).width ≤ 5 := by
-  apply ciSup_le
-  unfold toBP toBP_nodes
-  aesop
-
-/-
-Define the concatenation of two Barrington programs and prove that the evaluation of the concatenated program is the product of the evaluations (note the order due to function composition/multiplication convention).
--/
-def append {n : ℕ} (BP1 BP2 : BarringtonProgram n) : BarringtonProgram n :=
-  { len := BP1.len + BP2.len
-    var := Fin.append BP1.var BP2.var
-    perm0 := Fin.append BP1.perm0 BP2.perm0
-    perm1 := Fin.append BP1.perm1 BP2.perm1
-  }
-
-theorem len_append {n : ℕ} (BP1 BP2 : BarringtonProgram n) : (append BP1 BP2).len = BP1.len + BP2.len :=
+theorem len_append : (append BP1 BP2).len = BP1.len + BP2.len :=
   rfl
 
-theorem eval_append {n : ℕ} (BP1 BP2 : BarringtonProgram n) (x : Fin n → Fin 2) :
+theorem eval_append [Monoid G] (BP1 BP2 : BarringtonProgram α G) (x : α → Fin 2) :
     (BP1.append BP2).eval x = BP2.eval x * BP1.eval x := by
   unfold append eval;
-  rw [ show List.finRange ( BP1.len + BP2.len ) = List.map ( fun i => Fin.castAdd BP2.len i ) ( List.finRange BP1.len ) ++ List.map ( fun i => Fin.natAdd BP1.len i ) ( List.finRange BP2.len ) from ?_, List.foldl_append ];
-  · simp [ Fin.append, List.foldl_map ];
-    induction' ( List.finRange BP2.len ) using List.reverseRecOn with l ih <;> aesop;
-  · refine' List.ext_get _ _ <;> simp
-    intro i hi₁ hi₂; by_cases hi₃ : i < BP1.len <;> simp_all [Fin.castAdd ] ;
-
+  rw [ show List.finRange (BP1.len + BP2.len) = List.map (Fin.castAdd BP2.len) (List.finRange BP1.len) ++ List.map ( fun i => Fin.natAdd BP1.len i ) ( List.finRange BP2.len ) from ?_, List.foldl_append ];
+  · simp [Fin.append, List.foldl_map]
+    induction (List.finRange BP2.len) using List.reverseRecOn
+    · simp
+    · simp_all [mul_assoc]
+  · apply List.ext_get
+    · simp
+    · intro i hi₁ hi₂
+      by_cases hi₃ : i < BP1.len
+      · simp [hi₃]
+      · simp_all
 /-
 Define the reverse of a Barrington program and prove that its evaluation is the inverse of the original program's evaluation.
 -/
-def reverse {n : ℕ} (BP : BarringtonProgram n) : BarringtonProgram n where
+def reverse [Inv G] : BarringtonProgram α G where
   len := BP.len
   var := BP.var ∘ Fin.rev
   perm0 := fun i ↦ (BP.perm0 (Fin.rev i))⁻¹
   perm1 := fun i ↦ (BP.perm1 (Fin.rev i))⁻¹
 
-theorem eval_reverse {n : ℕ} (BP : BarringtonProgram n) (x : Fin n → Fin 2) :
+theorem eval_reverse [Group G] (x : α → Fin 2) :
     BP.reverse.eval x = (BP.eval x)⁻¹ := by
   unfold eval reverse
   -- By definition of `List.finRange`, we can rewrite the left-hand side to match the right-hand side.
@@ -112,55 +80,105 @@ theorem eval_reverse {n : ℕ} (BP : BarringtonProgram n) (x : Fin n → Fin 2) 
   conv_rhs => rw [ h_finRange ];
   induction' ( List.finRange BP.len ) using List.reverseRecOn with i _ ih <;> simp [ * ];
   split_ifs <;> simp_all +singlePass [ List.foldr_map];
-  · induction i <;> simp [ * ];
-    split_ifs <;> simp_all [ Equiv.Perm.ext_iff ];
-  · induction i <;> simp [ * ];
-    split_ifs <;> simp_all [ mul_assoc, inv_mul_eq_iff_eq_mul ]
+  · induction i
+    · simp
+    simp only [Fin.isValue, List.foldr_cons]
+    split_ifs <;> simp [*, ← mul_assoc]
+  · induction i
+    · simp
+    simp only [Fin.isValue, List.foldr_cons]
+    split_ifs <;> simp [*, ← mul_assoc]
 
 /-
 Define a Barrington program for a single variable and prove it computes the variable.
 -/
-def ofVar {n : ℕ} (i : Fin n) (σ : Equiv.Perm (Fin 5)) : BarringtonProgram n where
+def ofVar (i : α) [One G] (σ : G) : BarringtonProgram α G where
   len := 1
   var := fun _ ↦ i
   perm0 := fun _ ↦ 1
   perm1 := fun _ ↦ σ
 
-theorem eval_ofVar {n : ℕ} (i : Fin n) (σ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) :
+theorem eval_ofVar [MulOneClass G] (i : α) (σ : G) (x : α → Fin 2) :
     (BarringtonProgram.ofVar i σ).eval x = if x i = 1 then σ else 1 := by
-  unfold ofVar; aesop;
+  simp [ofVar, eval, List.finRange_succ]
 
 /-
 Define a constant Barrington program (reading a dummy variable) and prove it evaluates to the constant permutation.
 -/
-def const {n : ℕ} (i : Fin n) (σ : Equiv.Perm (Fin 5)) : BarringtonProgram n where
+def const (i : α) (σ : G) : BarringtonProgram α G where
   len := 1
   var := fun _ ↦ i
   perm0 := fun _ ↦ σ
   perm1 := fun _ ↦ σ
 
-theorem eval_const {n : ℕ} (i : Fin n) (σ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) :
+theorem eval_const [MulOneClass G] (i : α) (σ : G) (x : α → Fin 2) :
     (BarringtonProgram.const i σ).eval x = σ := by
   simp [eval, const, Fin.isValue, ite_self, List.finRange_succ]
 
 /-
 Define the commutator of two Barrington programs and prove its length is twice the sum of the lengths of the original programs.
 -/
-def commutator {n : ℕ} (BP1 BP2 : BarringtonProgram n) : BarringtonProgram n :=
+def commutator [Group G] : BarringtonProgram α G :=
   (BP1.append BP2).append (BP1.reverse.append BP2.reverse)
 
-theorem len_commutator {n : ℕ} (BP1 BP2 : BarringtonProgram n) :
+theorem len_commutator [Group G] :
     (BP1.commutator BP2).len = 2 * BP1.len + 2 * BP2.len := by
   simp +arith [commutator, len_append, reverse]
 
 /-
 Prove that the evaluation of the commutator program is the commutator of the evaluations.
 -/
-theorem eval_commutator {n : ℕ} (BP1 BP2 : BarringtonProgram n) (x : Fin n → Fin 2) :
+theorem eval_commutator [Group G] (x : α → Fin 2) :
     (BP1.commutator BP2).eval x = (BP2.eval x)⁻¹ * (BP1.eval x)⁻¹ * BP2.eval x * BP1.eval x := by
   unfold commutator;
   rw [eval_append, eval_append, eval_append, eval_reverse, eval_reverse]
   group
+
+
+/--
+Define the conversion from a Barrington Program to a Layered Branching Program.
+-/
+def toBP (BP : BarringtonProgram α G) (σ : G) (γ : Type) [Zero γ] [DecidableEq γ] [SMul G γ] :
+    LayeredBranchingProgram α (Fin 2) (Fin 2) where
+  depth := BP.len
+  nodes := fun i ↦ if i.val = 0 then Fin 1 else γ
+  nodeVar := fun {k} _ ↦ BP.var k
+  edges := fun {k} u b ↦
+    if hk : k.val = 0 then
+      let p := if b = 1 then BP.perm1 k else BP.perm0 k
+      let dest : γ := p • 0
+      dest
+    else
+      let u' : γ := cast (by simp [hk]) u
+      let p := if b = 1 then BP.perm1 k else BP.perm0 k
+      p • u'
+  startUnique := {
+    default := cast (by simp) (0 : Fin 1)
+    uniq := fun x ↦ Fin.eq_zero _
+  }
+  retVals := fun u ↦
+    if h : BP.len = 0 then
+      0
+    else
+      let u' : γ := cast (by simp [h]) u
+      if u' = σ • 0 then 1 else 0
+
+/-
+The width of the converted branching program is at most 5.
+-/
+theorem width_toBP (BP : BarringtonProgram α G) (σ : G)
+    (γ : Type) [Zero γ] [DecidableEq γ] [SMul G γ] [Fintype γ] :
+    (BP.toBP σ γ).width ≤ Fintype.card γ := by
+  apply ciSup_le
+  unfold toBP
+  intro x
+  simp only [Nat.succ_eq_add_one, Fin.val_eq_zero_iff]
+  split
+  · subst x
+    simp
+    apply Fintype.card_pos
+  · simp
+
 
 /-
 Prove that any 5-cycle in $S_5$ can be written as a commutator of two 5-cycles.
@@ -171,7 +189,7 @@ theorem _root_.exists_commutator_eq_cycle (σ : Equiv.Perm (Fin 5)) (hσ : σ.Is
       β.IsCycle ∧ β.support.card = 5 ∧
       σ = α * β * α⁻¹ * β⁻¹ := by
   revert σ
-  simp [Equiv.Perm.IsCycle];
+  simp [Equiv.Perm.IsCycle]
   native_decide +revert
 
 /-
@@ -184,11 +202,11 @@ theorem computes_ofVar {n : ℕ} (i : Fin n) (σ : Equiv.Perm (Fin 5)) (hσ : σ
 /-
 Prove that the commutator of two Barrington programs computes the AND of their functions, given that the resulting commutator permutation is non-identity.
 -/
-theorem computes_and {n : ℕ} (BP1 BP2 : BarringtonProgram n)
-    (f g : (Fin n → Fin 2) → Fin 2) (α β : Equiv.Perm (Fin 5))
-    (h1 : BP1.computes f α) (h2 : BP2.computes g β)
-    (h_comm : β⁻¹ * α⁻¹ * β * α ≠ 1) :
-    (BP1.commutator BP2).computes (fun x ↦ f x * g x) (β⁻¹ * α⁻¹ * β * α) := by
+theorem computes_and [Group G] (BP1 BP2 : BarringtonProgram α G)
+    (f g : (α → Fin 2) → Fin 2) (a b : G)
+    (h1 : BP1.computes f a) (h2 : BP2.computes g b)
+    (h_comm : b⁻¹ * a⁻¹ * b * a ≠ 1) :
+    (BP1.commutator BP2).computes (fun x ↦ f x * g x) (b⁻¹ * a⁻¹ * b * a) := by
   unfold computes at *
   refine ⟨h_comm, fun x ↦ ?_⟩
   simp [ *, BarringtonProgram.eval_commutator ]
@@ -198,13 +216,13 @@ theorem computes_and {n : ℕ} (BP1 BP2 : BarringtonProgram n)
 /-
 Define the conjugate of a Barrington program and prove its evaluation property.
 -/
-def conjugate {n : ℕ} (BP : BarringtonProgram n) (ρ : Equiv.Perm (Fin 5)) : BarringtonProgram n where
+def conjugate [Group G] (BP : BarringtonProgram α G) (ρ : G) : BarringtonProgram α G where
   len := BP.len
   var := BP.var
   perm0 := fun i ↦ ρ * BP.perm0 i * ρ⁻¹
   perm1 := fun i ↦ ρ * BP.perm1 i * ρ⁻¹
 
-theorem eval_conjugate {n : ℕ} (BP : BarringtonProgram n) (ρ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) :
+theorem eval_conjugate [Group G] (BP : BarringtonProgram α G) (ρ : G) (x : α → Fin 2) :
     (BP.conjugate ρ).eval x = ρ * BP.eval x * ρ⁻¹ := by
   unfold BarringtonProgram.conjugate BarringtonProgram.eval;
   induction' ( List.finRange BP.len ) using List.reverseRecOn with _ _ ih <;> aesop
@@ -212,13 +230,13 @@ theorem eval_conjugate {n : ℕ} (BP : BarringtonProgram n) (ρ : Equiv.Perm (Fi
 /-
 Define the negation of a Barrington program by appending a constant program that applies σ. Requires a variable index i to construct the constant program.
 -/
-def negate {n : ℕ} (BP : BarringtonProgram n) (i : Fin n) (σ : Equiv.Perm (Fin 5)) : BarringtonProgram n :=
+def negate [Group G] (BP : BarringtonProgram α G) (i : α) (σ : G) : BarringtonProgram α G :=
   BP.append (BarringtonProgram.const i σ)
 
 /-
 The length of the negated program is the length of the original program plus 1.
 -/
-theorem len_negate {n : ℕ} (BP : BarringtonProgram n) (i : Fin n) (σ : Equiv.Perm (Fin 5)) :
+theorem len_negate [Group G] (BP : BarringtonProgram α G) (i : α) (σ : G) :
     (BP.negate i σ).len = BP.len + 1 := by
   unfold negate
   rw [len_append]
@@ -227,7 +245,7 @@ theorem len_negate {n : ℕ} (BP : BarringtonProgram n) (i : Fin n) (σ : Equiv.
 /-
 Prove that the negation of a Barrington program computes the negation of the function.
 -/
-theorem computes_negate {n : ℕ} (BP : BarringtonProgram n) (i : Fin n) (f : (Fin n → Fin 2) → Fin 2) (σ : Equiv.Perm (Fin 5))
+theorem computes_negate [Group G] (BP : BarringtonProgram α G) (i : α) (f : (α → Fin 2) → Fin 2) (σ : G)
     (h : BP.computes f σ⁻¹) :
     (BP.negate i σ).computes (fun x ↦ 1 - f x) σ := by
   simp_all +decide [ computes ];
@@ -267,8 +285,8 @@ open Classical
 
 noncomputable def BP_of_FeedForward_layer {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
-    (u : nodes_succ) (σ : Equiv.Perm (Fin 5)) : BarringtonProgram n :=
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
+    (u : nodes_succ) (σ : Equiv.Perm (Fin 5)) : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)) :=
   let g := gates u
   if h_and : g.op.isAND then
     let e := Classical.choose h_and
@@ -295,10 +313,11 @@ noncomputable def BP_of_FeedForward_layer {n : ℕ} (hn : n > 0) {nodes_d nodes_
 Define the full Barrington program construction by induction on the circuit depth.
 -/
 noncomputable def BP_of_FeedForward {n : ℕ} (hn : n > 0)
-    (F : FeedForward (Fin 2) (Fin n) (Fin 1))
+    {out : Type} [Unique out] (F : FeedForward (Fin 2) (Fin n) out)
     (d : Fin (F.depth + 1)) :
-    F.nodes d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n :=
-  @Fin.induction _ (fun d => F.nodes d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    F.nodes d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)) :=
+  @Fin.induction _ (fun d => F.nodes d →
+      (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (fun i σ =>
       BarringtonProgram.ofVar (cast F.nodes_zero i) σ)
     (fun d prev_BPs => BP_of_FeedForward_layer hn (F.gates d) prev_BPs)
@@ -309,7 +328,7 @@ Prove that the length of the constructed Barrington program layer is at most 4 t
 -/
 theorem BP_of_FeedForward_layer_len {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    {prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n}
+    {prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5))}
     {L : ℕ} (hL : 1 ≤ L)
     (h_prev : ∀ v σ, (prev_BPs v σ).len ≤ L)
     (u : nodes_succ) (σ : Equiv.Perm (Fin 5)) :
@@ -326,8 +345,8 @@ theorem BP_of_FeedForward_layer_len {n : ℕ} (hn : n > 0) {nodes_d nodes_succ :
 /-
 Prove that the length of the constructed Barrington program is at most $4^d$.
 -/
-theorem BP_of_FeedForward_len {n : ℕ} (hn : n > 0)
-    (F : FeedForward (Fin 2) (Fin n) (Fin 1))
+theorem BP_of_FeedForward_len {out : Type} [Unique out] {n : ℕ} (hn : n > 0)
+    (F : FeedForward (Fin 2) (Fin n) out)
     (d : Fin (F.depth + 1)) (u : F.nodes d) (σ : Equiv.Perm (Fin 5)) :
     (BP_of_FeedForward hn F d u σ).len ≤ 4 ^ (d : ℕ) := by
   -- We proceed by induction on the depth $d$.
@@ -353,7 +372,7 @@ If the gate is a NOT gate, the constructed Barrington program computes the negat
 -/
 theorem BP_of_FeedForward_layer_computes_NOT {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (input_vals : nodes_d → (Fin n → Fin 2) → Fin 2)
     (h_prev : ∀ (v : nodes_d) (σ : Equiv.Perm (Fin 5)),
       σ.IsCycle ∧ σ.support.card = 5 →
@@ -379,7 +398,7 @@ If the gate is an ID gate, the constructed Barrington program computes the ident
 -/
 theorem BP_of_FeedForward_layer_computes_ID {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (input_vals : nodes_d → (Fin n → Fin 2) → Fin 2)
     (h_prev : ∀ (v : nodes_d) (σ : Equiv.Perm (Fin 5)),
       σ.IsCycle ∧ σ.support.card = 5 →
@@ -410,7 +429,7 @@ If the gate is a Const 1 gate, the constructed Barrington program computes the c
 -/
 theorem BP_of_FeedForward_layer_computes_Const {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (input_vals : nodes_d → (Fin n → Fin 2) → Fin 2)
     (u : nodes_succ) (σ : Equiv.Perm (Fin 5))
     (hσ : σ.IsCycle ∧ σ.support.card = 5)
@@ -434,7 +453,7 @@ theorem BP_of_FeedForward_layer_computes_Const {n : ℕ} (hn : n > 0) {nodes_d n
 /-
 If `σ` is the commutator of `x` and `y`, and `BP1` computes `f` with `y⁻¹` and `BP2` computes `g` with `x⁻¹`, then the commutator of `BP1` and `BP2` computes `f * g` with `σ`.
 -/
-lemma commutator_computes_AND_of_cycle_decomp {n : ℕ} (BP1 BP2 : BarringtonProgram n)
+lemma commutator_computes_AND_of_cycle_decomp {n : ℕ} (BP1 BP2 : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (f g : (Fin n → Fin 2) → Fin 2) (σ x y : Equiv.Perm (Fin 5))
     (hσ : σ ≠ 1)
     (h_decomp : σ = x * y * x⁻¹ * y⁻¹)
@@ -464,7 +483,7 @@ If the gate is an AND gate, the constructed Barrington program computes the AND 
 -/
 theorem BP_of_FeedForward_layer_computes_AND {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (input_vals : nodes_d → (Fin n → Fin 2) → Fin 2)
     (h_prev : ∀ (v : nodes_d) (σ : Equiv.Perm (Fin 5)),
       σ.IsCycle ∧ σ.support.card = 5 →
@@ -496,7 +515,7 @@ Simplification lemma for `BP_of_FeedForward_layer` in the AND case.
 -/
 lemma BP_of_FeedForward_layer_eq_commutator {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (u : nodes_succ) (σ : Equiv.Perm (Fin 5))
     (h_and : (gates u).op.isAND)
     (h_cycle : σ.IsCycle ∧ σ.support.card = 5) :
@@ -512,7 +531,7 @@ The Barrington program constructed for a layer computes the correct value, assum
 -/
 theorem BP_of_FeedForward_layer_computes {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (input_vals : nodes_d → (Fin n → Fin 2) → Fin 2)
     (h_prev : ∀ (v : nodes_d) (σ : Equiv.Perm (Fin 5)),
       σ.IsCycle ∧ σ.support.card = 5 →
@@ -532,23 +551,23 @@ theorem BP_of_FeedForward_layer_computes {n : ℕ} (hn : n > 0) {nodes_d nodes_s
 The Barrington program constructed from a FeedForward circuit computes the same function as the circuit node.
 -/
 theorem BP_of_FeedForward_computes {n : ℕ} (hn : n > 0)
-    (F : FeedForward (Fin 2) (Fin n) (Fin 1))
+    {out : Type} [Unique out] {F : FeedForward (Fin 2) (Fin n) out}
     (h_gates : F.onlyUsesGates NC_GateOps)
-    (d : Fin (F.depth + 1)) (u : F.nodes d) (σ : Equiv.Perm (Fin 5))
+    {d : Fin (F.depth + 1)} (u : F.nodes d) {σ : Equiv.Perm (Fin 5)}
     (hσ : σ.IsCycle ∧ σ.support.card = 5) :
-    (BP_of_FeedForward hn F d u σ).computes (fun x ↦ F.evalNode u x) σ := by
-      -- Apply the induction hypothesis to the previous layer's programs.
-      have h_ind : ∀ (v : F.nodes d) (σ : Equiv.Perm (Fin 5)), σ.IsCycle ∧ σ.support.card = 5 → (BP_of_FeedForward hn F d v σ).computes (fun x => F.evalNode v x) σ := by
-        induction' d using Fin.induction with d ih;
-        · unfold BarringtonProgram.computes; aesop;
-        · intro v σ hσ
-          have h_layer : (BP_of_FeedForward_layer hn (F.gates d) (BP_of_FeedForward hn F d.castSucc) v σ).computes (fun x => (F.gates d v).eval (fun n => F.evalNode n x)) σ := by
-            apply BP_of_FeedForward_layer_computes;
-            · exact fun v σ hσ => ih v v σ hσ;
-            · exact hσ;
-            · exact h_gates d v;
-          convert h_layer using 1;
-      exact h_ind u σ hσ
+    (BP_of_FeedForward hn F d u σ).computes (F.evalNode u) σ := by
+  -- Apply the induction hypothesis to the previous layer's programs.
+  have h_ind : ∀ (v : F.nodes d) (σ : Equiv.Perm (Fin 5)), σ.IsCycle ∧ σ.support.card = 5 → (BP_of_FeedForward hn F d v σ).computes (fun x => F.evalNode v x) σ := by
+    induction' d using Fin.induction with d ih;
+    · unfold BarringtonProgram.computes; aesop;
+    · intro v σ hσ
+      have h_layer : (BP_of_FeedForward_layer hn (F.gates d) (BP_of_FeedForward hn F d.castSucc) v σ).computes (fun x => (F.gates d v).eval (fun n => F.evalNode n x)) σ := by
+        apply BP_of_FeedForward_layer_computes;
+        · exact fun v σ hσ => ih v v σ hσ;
+        · exact hσ;
+        · exact h_gates d v;
+      convert h_layer using 1;
+  exact h_ind u σ hσ
 
 /-
 The permutation (0 1 2 3 4) is a 5-cycle.
@@ -560,11 +579,23 @@ lemma sigma_five_cycle_is_cycle : sigma_five_cycle.IsCycle ∧ sigma_five_cycle.
   simp +decide [Equiv.Perm.IsCycle]
 
 /-
+The permutation (0 1 2 3 4) does not map 0 to 0.
+-/
+lemma sigma_five_cycle_zero_ne_zero : sigma_five_cycle 0 ≠ 0 := by
+  decide
+
+/-
+The permutation (0 1 2 3 4) is not the identity.
+-/
+lemma sigma_five_cycle_ne_one : sigma_five_cycle ≠ 1 := by
+  decide
+
+/-
 The length of the constructed Barrington program for a layer is at most 4 times the maximum length of the previous layer's programs.
 -/
 theorem BP_of_FeedForward_layer_len' {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (L : ℕ) (hL : 1 ≤ L)
     (h_prev : ∀ v σ, (prev_BPs v σ).len ≤ L)
     (u : nodes_succ) (σ : Equiv.Perm (Fin 5)) :
@@ -576,7 +607,7 @@ The length of the constructed Barrington program for a layer is at most 4 times 
 -/
 theorem BP_of_FeedForward_layer_len_aux {n : ℕ} (hn : n > 0) {nodes_d nodes_succ : Type}
     (gates : nodes_succ → FeedForward.Gate (Fin 2) nodes_d)
-    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram n)
+    (prev_BPs : nodes_d → (σ : Equiv.Perm (Fin 5)) → BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (L : ℕ) (hL : 1 ≤ L)
     (h_prev : ∀ v σ, (prev_BPs v σ).len ≤ L)
     (u : nodes_succ) (σ : Equiv.Perm (Fin 5)) :
@@ -609,33 +640,14 @@ noncomputable def BP_of_CircuitFamily {out : Type} [Unique out]
       }
     else
       let F := CF n
-      if h_depth : F.depth = 0 then
-        -- Depth 0 case (implies n=1)
-        (BarringtonProgram.ofVar ⟨0, Nat.pos_of_ne_zero hn⟩ sigma_five_cycle).toBP sigma_five_cycle
-      else
-        -- Depth > 0 case
-        let F' := F.relabelOut h_depth (Equiv.ofUnique out (Fin 1))
-        let d := Fin.last F'.depth
-        let u : F'.nodes d := cast F'.nodes_last.symm 0
-        let BP := BP_of_FeedForward (Nat.pos_of_ne_zero hn) F' d u sigma_five_cycle
-        BP.toBP sigma_five_cycle
-
-/-
-The permutation (0 1 2 3 4) does not map 0 to 0.
--/
-lemma sigma_five_cycle_zero_ne_zero : sigma_five_cycle 0 ≠ 0 := by
-  decide
-
-/-
-The permutation (0 1 2 3 4) is not the identity.
--/
-lemma sigma_five_cycle_ne_one : sigma_five_cycle ≠ 1 := by
-  decide
+      let u : F.nodes (Fin.last F.depth) := cast F.nodes_last.symm (default : out)
+      let BP := BP_of_FeedForward (Nat.pos_of_ne_zero hn) F _ u sigma_five_cycle
+      (BP).toBP sigma_five_cycle (Fin 5)
 
 /-
 Partial evaluation of a Barrington program using the first k instructions.
 -/
-def BarringtonProgram.eval_partial {n : ℕ} (BP : BarringtonProgram n) (k : ℕ) (x : Fin n → Fin 2) : Equiv.Perm (Fin 5) :=
+def BarringtonProgram.eval_partial {n : ℕ} (BP : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5))) (k : ℕ) (x : Fin n → Fin 2) : Equiv.Perm (Fin 5) :=
   ((List.finRange BP.len).take k).foldl (fun acc i ↦
     let p := if x (BP.var i) = 1 then BP.perm1 i else BP.perm0 i
     p * acc) 1
@@ -643,23 +655,23 @@ def BarringtonProgram.eval_partial {n : ℕ} (BP : BarringtonProgram n) (k : ℕ
 /-
 Evaluation is equivalent to partial evaluation at the full length.
 -/
-theorem BarringtonProgram.eval_eq_eval_partial {n : ℕ} (BP : BarringtonProgram n) (x : Fin n → Fin 2) :
+theorem BarringtonProgram.eval_eq_eval_partial {n : ℕ} (BP : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5))) (x : Fin n → Fin 2) :
     BP.eval x = BP.eval_partial BP.len x := by
   rw [eval_partial, List.take_of_length_le (by simp)]
-  exact rfl
+  rfl
 
 /-
 The nodes at layer k > 0 in the converted branching program are Fin 5.
 -/
-lemma BarringtonProgram.toBP_nodes_eq_fin5 {n : ℕ} (BP : BarringtonProgram n) (σ : Equiv.Perm (Fin 5)) (k : ℕ) (hk : k ≤ BP.len) (hk0 : 0 < k) :
-    (BP.toBP σ).nodes ⟨k, Nat.lt_succ_of_le hk⟩ = Fin 5 := by
+lemma BarringtonProgram.toBP_nodes_eq_fin5 {n : ℕ} (BP : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5))) (σ : Equiv.Perm (Fin 5)) (k : ℕ) (hk : k ≤ BP.len) (hk0 : 0 < k) :
+    (BP.toBP σ (Fin 5)).nodes ⟨k, Nat.lt_succ_of_le hk⟩ = Fin 5 := by
   cases k <;> aesop
 
 /-
 The node reached at layer k in the converted branching program corresponds to the value of 0 under the partial evaluation of the Barrington program.
 -/
-theorem BarringtonProgram.toBP_evalLayer_eq_eval_partial {n : ℕ} (BP : BarringtonProgram n) (σ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) (k : ℕ) (hk : k ≤ BP.len) (hk0 : 0 < k) :
-    cast (toBP_nodes_eq_fin5 BP σ k hk hk0) ((BP.toBP σ).evalLayer ⟨k, Nat.lt_succ_of_le hk⟩ x) = (BP.eval_partial k x) 0 := by
+theorem BarringtonProgram.toBP_evalLayer_eq_eval_partial {n : ℕ} (BP : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5))) (σ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) (k : ℕ) (hk : k ≤ BP.len) (hk0 : 0 < k) :
+    cast (toBP_nodes_eq_fin5 BP σ k hk hk0) ((BP.toBP σ (Fin 5)).evalLayer ⟨k, Nat.lt_succ_of_le hk⟩ x) = (BP.eval_partial k x) 0 := by
   generalize_proofs at *;
   induction' k with k ih <;> simp_all [ Nat.succ_eq_add_one ];
   cases k <;> simp_all [ Nat.succ_eq_add_one]
@@ -677,22 +689,42 @@ theorem BarringtonProgram.toBP_evalLayer_eq_eval_partial {n : ℕ} (BP : Barring
 /-
 The evaluation of the converted branching program is correct (assuming length > 0).
 -/
-theorem BarringtonProgram.toBP_eval {n : ℕ} (BP : BarringtonProgram n) (σ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) (h_len : BP.len > 0) :
-    (BP.toBP σ).eval x = if (BP.eval x) 0 = σ 0 then 1 else 0 := by
+theorem BarringtonProgram.toBP_eval {n : ℕ} (BP : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
+    (σ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) (hσ : σ 0 ≠ 0):
+    (BP.toBP σ (Fin 5)).eval x = if (BP.eval x) 0 = σ 0 then 1 else 0 := by
+  by_cases h_len : BP.len = 0
+  · rcases BP with ⟨len, var, perm0, perm1⟩
+    dsimp at h_len
+    subst len
+    simp [eval, toBP, LayeredBranchingProgram.eval ]
+    exact hσ.symm
+  replace h_len : 0 < BP.len := by omega
   -- Since BP.len > 0, the last layer is at index BP.len. By definition of toBP, the nodes at this layer are Fin 5.
-  have h_last_layer : (BP.toBP σ).nodes ⟨BP.len, Nat.lt_succ_self _⟩ = Fin 5 := by
-    exact if_neg ( by aesop );
+  have h_last_layer : (BP.toBP σ (Fin 5)).nodes ⟨BP.len, Nat.lt_succ_self _⟩ = Fin 5 :=
+    if_neg h_len.ne'
   -- By definition of toBP, the evaluation at the last layer is the result of applying the permutation σ to the value at 0.
-  have h_eval_last_layer : (BP.toBP σ).eval x = if (cast h_last_layer ((BP.toBP σ).evalLayer ⟨BP.len, Nat.lt_succ_self _⟩ x)) = σ 0 then 1 else 0 := by
-    have h_depth : (BP.toBP σ).depth = BP.len := by
-      rfl
-    unfold toBP at * ; aesop;
+  have h_eval_last_layer : (BP.toBP σ (Fin 5)).eval x = if (cast h_last_layer ((BP.toBP σ (Fin 5)).evalLayer ⟨BP.len, Nat.lt_succ_self _⟩ x)) = σ 0 then 1 else 0 := by
+    unfold toBP at *
+    simp only [Nat.succ_eq_add_one, Fin.val_eq_zero_iff, Fin.coe_castSucc, Fin.isValue, ite_smul,
+      Equiv.Perm.smul_def, Fin.val_succ, Nat.add_eq_zero, one_ne_zero, and_false, ↓dreduceIte, Fin.coe_ofNat_eq_mod,
+      Nat.zero_mod, cast_eq, Fin.val_last, Lean.Elab.WF.paramLet]
+    split
+    · simp_all only [lt_self_iff_false]
+    · dsimp at h_last_layer
+      sorry
   convert h_eval_last_layer using 2;
   rw [toBP_evalLayer_eq_eval_partial]
   · rw [eval_eq_eval_partial]
   · norm_num
   · linarith
 
+theorem BarringtonProgram.of_CircuitFamily_IsOblivious {out : Type} [Unique out]
+    (CF : CircuitFamily₁ (Fin 2) out) :
+    (BP_of_CircuitFamily CF).IsOblivious := by
+  intro n
+  dsimp [BP_of_CircuitFamily]
+  split_ifs with hn
+  <;> simp [toBP, LayeredBranchingProgram.IsOblivious]
 /-
 The branching program family constructed from a circuit family has width at most 5.
 -/
@@ -703,7 +735,6 @@ theorem BarringtonProgram.of_CircuitFamily_hasWidth_five {out : Type} [Unique ou
   dsimp [BP_of_CircuitFamily]
   split_ifs with hn
   · simp [LayeredBranchingProgram.width]
-  · apply width_toBP
   · apply width_toBP
 
 /-
@@ -720,102 +751,66 @@ theorem BarringtonProgram.of_CircuitFamily_hasDepth_poly {out : Type} [Unique ou
     dsimp [BP_of_CircuitFamily]
     split_ifs
     · simp [*]
-    · simp [*]
-      rfl
-    · refine (BP_of_FeedForward_len ..).trans ?_
-      simp [FeedForward.relabelOut]
+    · dsimp [toBP] --make this step a lemma: f.toBP.depth = f.len
+      grw [BP_of_FeedForward_len]
+      simp
 
-/-
-For any layer except the last one, the nodes of the relabeled circuit are the same as the original circuit.
--/
-theorem FeedForward.nodes_relabelOut_eq {α inp out a} (F : FeedForward α inp out)
-    (hF : F.depth ≠ 0) (e : out ≃ a) (d : Fin (F.depth + 1)) (hd : d < Fin.last F.depth) :
-    (F.relabelOut hF e).nodes d = F.nodes d := by
-  unfold relabelOut
-  rw [ite_eq_right_iff]
-  rintro rfl
-  simp at hd
+theorem BarringtonProgram.of_CircuitFamily_computes {out : Type} [Unique out]
+    {CF : CircuitFamily₁ (Fin 2) out} {f : FuncFamily₁ (Fin 2)}
+    (hcf : CF.computes₁ f) (hcf_gates : CF.onlyUsesGates NC_GateOps):
+    (BP_of_CircuitFamily CF).computes f := by
+  intro n
+  rw [BP_of_CircuitFamily]
+  rcases n with _ | n
+  · simp only [reduceDIte]
+    unfold LayeredBranchingProgram.eval
+    convert hcf 0
+  rw [← hcf (n + 1)]
+  simp
+  generalize_proofs pf1 pf2
+  have h := BP_of_FeedForward_computes pf1 (hcf_gates (n + 1)) (cast pf2 default) sigma_five_cycle_is_cycle
+  unfold computes at h
+  rcases h with ⟨h, h'⟩
+  ext1 x
+  rw [BarringtonProgram.toBP_eval _ _ _ (by decide), h' x]
+  unfold eval₁
+  split_ifs with h₁ h₂ h₂
+  · simp_all
+    symm
+    assumption
+  · simp_all
+  · exfalso
+    revert h₂; decide
+  · symm
+    contrapose! h₁
+    exact Fin.eq_one_of_ne_zero _ h₁
 
-/-
-For any layer except the last one, the gates of the relabeled circuit are heterogeneously equal to the original circuit.
--/
-theorem FeedForward.gates_relabelOut_heq {α inp out a} (F : FeedForward α inp out)
-    (hF : F.depth ≠ 0) (e : out ≃ a) (k : Fin F.depth) (hk : k.val < F.depth - 1)
-    (n : (F.relabelOut hF e).nodes k.succ) :
-    HEq ((F.relabelOut hF e).gates k n) (F.gates k (cast (by
-        rw [FeedForward.nodes_relabelOut_eq F hF e k.succ (by
-          simp [Fin.lt_iff_val_lt_val]
-          omega
-        )]
-      ) n)) := by
-  generalize_proofs at *;
-  unfold FeedForward.relabelOut; aesop;
-
-/-
-For any layer except the last one, the evaluation of a node in the relabeled circuit is the same as in the original circuit.
--/
-theorem FeedForward.evalNode_relabelOut_lt {α inp out a} (F : FeedForward α inp out)
-    (hF : F.depth ≠ 0) (e : out ≃ a) (d : Fin (F.depth + 1)) (hd : d < Fin.last F.depth)
-    (node : (F.relabelOut hF e).nodes d) (x : inp → α) :
-    (F.relabelOut hF e).evalNode node x =
-      F.evalNode (cast (FeedForward.nodes_relabelOut_eq F hF e d hd) node) x := by
-  have h_nodes_eq : ∀ k : Fin (F.depth + 1), k < Fin.last F.depth → (F.relabelOut hF e).nodes k = F.nodes k := by
-    exact fun k a_1 ↦ nodes_relabelOut_eq F hF e k a_1
-  generalize_proofs at *;
-  induction' d using Fin.inductionOn with i IH;
-  · cases F ; aesop;
-  · simp_all [ Fin.lt_iff_val_lt_val ];
-    have h_gates_eq : ∀ (node : (F.relabelOut hF e).nodes (Fin.succ i)), HEq ((F.relabelOut hF e).gates i node) (F.gates i (cast ‹_› node)) := by
-      apply FeedForward.gates_relabelOut_heq;
-      exact Nat.lt_pred_iff.mpr hd;
-    -- Apply the equality of gates to the evaluation.
-    change ((F.relabelOut hF e).gates i node).eval (fun v => (F.relabelOut hF e).evalNode v x) = (F.gates i (cast ‹_› node)).eval (fun v => F.evalNode v x)
-    rw [ FeedForward.Gate.eval, FeedForward.Gate.eval ];
-    congr! 1 with e_2
-    · grind;
-    · congr! 1
-      · exact congrArg GateOp.ι e_2
-      · grind
-
-/-
-For any layer except the last one, the gates of the relabeled circuit are equal (modulo casts) to the original circuit.
--/
-theorem FeedForward.gates_relabelOut_eq {α inp out a} (F : FeedForward α inp out)
-    (hF : F.depth ≠ 0) (e : out ≃ a) (k : Fin F.depth) (hk : k.val < F.depth - 1)
-    (n : (F.relabelOut hF e).nodes k.succ) :
-    (F.relabelOut hF e).gates k n =
-      cast (by rw [nodes_relabelOut_eq F hF e k.castSucc k.castSucc_lt_last])
-      (F.gates k (cast (nodes_relabelOut_eq F hF e k.succ (Nat.lt_pred_iff.mp hk)) n)) := by
-  have := gates_relabelOut_heq F hF e k hk n
-  grind
-
-/-
-Evaluating a casted gate is equivalent to evaluating the original gate with casted inputs.
--/
-lemma FeedForward.Gate.eval_cast {α : Type u} {domain domain' : Type v}
-    (g : FeedForward.Gate α domain) (h : domain = domain') (xs : domain' → α) :
-    (cast (congrArg (FeedForward.Gate α) h) g).eval xs = g.eval (fun d ↦ xs (cast h d)) := by
-  subst h
-  rfl
+instance BP_of_CircuitFamily_Finite {out : Type} [Unique out]
+  (CF : CircuitFamily₁ (Fin 2) out) [CF.Finite] :
+    (BP_of_CircuitFamily CF).Finite := by
+  constructor
+  intro n
+  dsimp [BP_of_CircuitFamily]
+  split_ifs with hn
+  · constructor
+    intro i
+    simp
+    infer_instance
+  · constructor
+    intro i
+    sorry
 
 /-
 The size of a branching program in a family with bounded width is bounded by width * depth + 1.
 -/
-theorem BPFamily.size_le_bound (BPF : BPFamily α) [BPF.Finite] (w : ℕ) (hw : BPF.hasWidth (·≤w)) :
+theorem BPFamily.size_le_bound (BPF : BPFamily α) [BPF.Finite] {w : ℕ} (hw : BPF.hasWidth (·≤w)) :
     ∀ n, (BPF n).size ≤ w * (BPF n).depth + 1 := by
-  -- Apply the lemma that relates the size of a layer to its width and depth, and use the fact that the width is bounded by w.
-  intros n
-  have h_width : (BPF n).width ≤ w := by
-    exact hw n
-  have h_size : (BPF n).size ≤ (BPF n).width * (BPF n).depth + 1 := by
-    convert LayeredBranchingProgram.size_le_width_mul_depth _;
-    -- Since BPF is a family of finite branching programs, each BPF n is finite by definition.
-    apply (‹BPFamily.Finite BPF›).finite
-  exact h_size.trans (by
-  exact Nat.succ_le_succ ( Nat.mul_le_mul_right _ h_width ))
+  intro n
+  grw [(BPF n).size_le_width_mul_depth, show (BPF n).width ≤ w from hw n]
 
+/-- Constant functions are in the `GrowthRate.const` class. -/
 theorem GrowthRate.const_mem_const (k : ℕ) : (fun _ ↦ k) ∈ GrowthRate.const := by
-  simp [const, bigO]
+  simp only [const, bigO, Pi.one_apply, Nat.cast_one, Asymptotics.isBigO_one_iff]
   use k
   simp
 
@@ -825,38 +820,40 @@ lemma GrowthRate.affine_comp {S : GrowthRate} [LawfulGrowthRate S] {f : ℕ → 
     (GrowthRate.const_mul (GrowthRate.const_mem_const a) hf)
     (GrowthRate.const_mem <| GrowthRate.const_mem_const b)
 
-/-
+/--
 If a branching program family has constant width and polynomial depth, it has polynomial size.
 -/
 theorem BPFamily.hasSize_poly_of_hasWidth_const_hasDepth_poly (BPF : BPFamily α) [BPF.Finite]
-    (w : ℕ) (hw : BPF.hasWidth (·≤w)) (hd : BPF.hasDepth GrowthRate.poly) :
-    BPF.hasSize GrowthRate.poly := by
-  -- Let `f(n) = (BPF n).depth`. We are given `f ∈ GrowthRate.poly` (by `hd`).
-  set f : ℕ → ℕ := fun n => (BPF n).depth
-  have hf : f ∈ GrowthRate.poly := hd;
-  -- Let `g(n) = w * f(n) + 1`. By `GrowthRate.poly_affine_closure'`, `g ∈ GrowthRate.poly`.
-  set g : ℕ → ℕ := fun n => w * f n + 1
-  have hg : g ∈ GrowthRate.poly := GrowthRate.affine_comp hf
-  -- Since `GrowthRate.poly` is a `LawfulGrowthRate`, we can use `LawfulGrowthRate.mem_dominating`.
-  have h_dominating : ∀ᶠ n in Filter.atTop, (BPF n).size ≤ g n := by
-    have := @BPFamily.size_le_bound _ BPF ‹_› w hw; aesop;
-  -- Apply the `LawfulGrowthRate.mem_dominating` lemma with `g` and `h`, since `g ∈ GrowthRate.poly` and `h` is dominated by `g`, we conclude `h ∈ GrowthRate.poly`.
-  have h_final : (fun n => (BPF n).size) ∈ GrowthRate.poly := by
-    have h_mem : (fun n => (BPF n).size) ≤ᶠ[Filter.atTop] g := h_dominating
-    exact GrowthRate.mem_dominating h_dominating hg;
-  exact h_final
+    {w : ℕ} (hw : BPF.hasWidth (·≤w)) (hd : BPF.hasDepth .poly) :
+    BPF.hasSize GrowthRate.poly :=
+  GrowthRate.mono (GrowthRate.affine_comp hd) (BPF.size_le_bound hw)
 
-/-
+/--
 If a Barrington program computes a function f with permutation sigma, then its converted branching program computes f.
 -/
-theorem BarringtonProgram.toBP_computes_of_computes {n : ℕ} (BP : BarringtonProgram n)
+theorem BarringtonProgram.toBP_computes_of_computes {n : ℕ} (BP : BarringtonProgram (Fin n) (Equiv.Perm (Fin 5)))
     (f : (Fin n → Fin 2) → Fin 2) (σ : Equiv.Perm (Fin 5))
-    (hσ0 : σ 0 ≠ 0) (hlen : BP.len > 0) (h : BP.computes f σ) :
-    (BP.toBP σ).computes f := by
+    (hσ0 : σ 0 ≠ 0) (h : BP.computes f σ) :
+    (BP.toBP σ (Fin 5)).computes f := by
   rw [LayeredBranchingProgram.computes]
   intro x
-  rw [BarringtonProgram.toBP_eval BP σ x hlen]
+  rw [BarringtonProgram.toBP_eval BP σ x hσ0]
   have h_eval : BP.eval x = if f x = 1 then σ else 1 := h.2 x
   rcases Fin.exists_fin_two.mp ⟨f x, rfl⟩ with h | h
   · simp [h_eval, h, hσ0.symm]
   · simp [h_eval, h]
+
+theorem NC1_subset_BPClass : NCi 1 ⊆ BPClass (·≤5) .poly true := by
+  intro f ⟨u, hu, cf, hcf⟩
+  use BP_of_CircuitFamily cf
+  rcases hcf with ⟨hcf_fin, hcf_comp, _, hcf_depth, hcf_gates⟩
+  fconstructor
+  · apply BP_of_CircuitFamily_Finite
+  and_intros
+  · apply BarringtonProgram.of_CircuitFamily_computes hcf_comp hcf_gates
+  · apply BarringtonProgram.of_CircuitFamily_hasWidth_five
+  · apply BarringtonProgram.of_CircuitFamily_hasDepth_poly
+    simp_rw [pow_one, GrowthRate.bigO_log2_eq_log] at hcf_depth
+    exact hcf_depth
+  · intro _
+    apply BarringtonProgram.of_CircuitFamily_IsOblivious
