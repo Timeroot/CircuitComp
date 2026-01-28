@@ -75,12 +75,7 @@ theorem exists_comp_on_essDomain [Nonempty α] [Fintype ι] (f : (ι → α) →
   wlog hi : Nonempty ι
   · rw [not_nonempty_iff] at hi
     use (fun _ ↦ f hi.elim)
-    intro
-    congr
-    apply Subsingleton.elim
-  have : Inhabited β := Classical.inhabited_of_nonempty <|
-    Nonempty.elim (inferInstance) (fun a ↦ ⟨f (fun _ ↦ a)⟩)
-  inhabit α
+    congr!
   --We construct g by agreeing with f on its essential support, and providing a dummy value
   --elsewhere. We prove the property by induction on the number of dummy values we use, which
   --means generalizing to any set containing the essential support.
@@ -102,25 +97,23 @@ theorem exists_comp_on_essDomain [Nonempty α] [Fintype ι] (f : (ι → α) →
   rename_i i s hi ih _
   simp only [← Finset.coe_inj, Finset.coe_compl, Set.coe_toFinset, Finset.coe_insert] at hSc
   rw [← Finset.mem_coe] at hi
-  dsimp at ih
-  specialize ih sᶜ ?_ ?_
+  specialize ih sᶜ ?_ (by simp)
   · apply hS₂.trans
     rw [← compl_compl S, hSc, Set.compl_subset_compl]
-    exact Set.subset_insert i ↑s
-  · simp
+    exact Set.subset_insert i s
   generalize (↑s : Set ι) = s₀ at *
   clear s
   have hi₂ : i ∈ Sᶜ := by
-    have : i ∈ insert i s₀ := by exact Set.mem_insert i s₀
-    rwa [← hSc] at this
-  have hi₃ : i ∉ f.EssDomain := (hi₂ <| hS₂ ·)
-  clear hS₂
+    rw [hSc]
+    exact Set.mem_insert i s₀
   obtain ⟨g₀, hg₀⟩ := ih
   replace hg₀ := funext hg₀
   subst f
+  inhabit α
   use (fun xs ↦ g₀ fun j ↦ if hj : j = i then default else xs ⟨j, by
     rw [← compl_compl S]
     simpa [hSc, hj, -Subtype.coe_prop] using j.prop
     ⟩)
+  have hi₃ := (hi₂ <| hS₂ ·)
   simp [Function.EssDomain] at hi₃
   exact fun _ ↦ hi₃ _ _ fun _ ↦ (Eq.symm <| if_neg ·)
