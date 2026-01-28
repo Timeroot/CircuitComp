@@ -264,7 +264,8 @@ theorem thinBP_computes : (thinBP F).computes F := by
     replace h₂ := h₂.right
     contrapose! h₂
     rw [Equiv.eq_symm_apply]
-    sorry
+    have _ : Nonempty γ := ⟨F (fun _ ↦ Nonempty.some ‹_›)⟩
+    exact Fin.val_eq_zero_iff.mp h₂
   · rename_i h₂
     push_neg at h₂
     rw [cast_comm] at h
@@ -273,7 +274,7 @@ theorem thinBP_computes : (thinBP F).computes F := by
       simp
     simp only [thinBP, eq_mp_eq_cast, cast_cast, cast_eq, h', reduceDIte]
     rw [h₂]
-    sorry
+    exact Fin.val_lt_of_le (thinBP_index x) h_ge
 
 end thinBP_proof
 ------------
