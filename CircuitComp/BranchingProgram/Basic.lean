@@ -164,6 +164,11 @@ def evalAt (P : LayeredBranchingProgram α β γ) (x : α → β) (i : Fin P.dep
     have : i.val < (i.castPred h).succ := by simp
     omega
 
+theorem evalAt_castSucc (x : α → β) (i : Fin P.depth) (u : P.nodes i.castSucc) :
+    P.evalAt x i.castSucc u = P.evalAt x i.succ (P.edges u (x (P.nodeVar u))) := by
+  rw [evalAt]
+  simp
+
 /--
 `evalAt` starting at the node reached by `evalLayer` yields the same result as `eval`.
 -/
@@ -279,6 +284,11 @@ def evalAt (P : SkipBranchingProgram α β γ) (x : α → β) {i : Fin P.depth.
     have h_gt := P.edges_layer_gt u' (x (P.nodeVar u'))
     simp only [i', u'] at h_gt
     apply Nat.sub_lt_sub_left h_lt h_gt
+
+theorem evalAt_castSucc (x : α → β) (i : Fin P.depth) (u : P.nodes i.castSucc) :
+    P.evalAt x u = P.evalAt x (P.edges u (x (P.nodeVar u))).2 := by
+  rw [evalAt]
+  simp
 
 /-- Evaluate a `SkipBranchingProgram` on inputs `x`. -/
 def eval (x : α → β) : γ :=
@@ -613,26 +623,22 @@ theorem nonempty_of_depth_pos (h : 0 < P.depth) : Nonempty α :=
   let u : P.nodes z.castSucc := cast (by simp [z]) P.start
   ⟨P.nodeVar u⟩
 
-/-- The "active edges" at layer `i` are the edges that skip past layer `i`. -/
-def ActiveEdges (i : Fin (P.depth + 1)) : Type v :=
-  Σ (l : { l : Fin P.depth // l.castSucc < i }),
-    Σ (u : P.nodes l.val.castSucc), { b : β // (P.edges u b).1 > i }
+/-- The "active nodes" ahead of layer `i` are the nodes with an edge going past layer `i` there. -/
+def ActiveNodes (i : Fin (P.depth + 1)) : Type v :=
+  { u : (m : Fin (P.depth + 1)) × P.nodes m // u.1 > i ∧ ∃ l₂ : Fin (P.depth),
+    l₂.castSucc < i ∧ ∃ (v : P.nodes l₂.castSucc) (b : β), P.edges v b = u }
 
-lemma ActiveEdges_last_isEmpty : IsEmpty (P.ActiveEdges (Fin.last P.depth)) :=
-  ⟨fun ⟨_, h⟩ ↦ not_lt_of_ge (Fin.le_last _) h.2.2⟩
+lemma ActiveNodes_last_isEmpty : IsEmpty (P.ActiveNodes (Fin.last P.depth)) :=
+  ⟨fun ⟨_, h, _⟩ ↦ (Fin.le_last _).not_gt h⟩
 
-/--
-Conversion from `SkipBranchingProgram` to `LayeredBranchingProgram`.
-Adds dummy nodes to carry values across skipped layers.
--/
 def toLayered : LayeredBranchingProgram α β γ where
   depth := P.depth
-  nodes i := P.nodes i ⊕ P.ActiveEdges i
+  nodes i := P.nodes i ⊕ P.ActiveNodes i
   nodeVar {i} u := match u with
     | .inl u => P.nodeVar u
     | .inr _ =>
       if h : Nonempty (P.nodes i.castSucc) then
-        P.nodeVar (Classical.choice h)
+        P.nodeVar h.some
       else
         (P.nonempty_of_depth_pos (lt_of_le_of_lt (Nat.zero_le _) i.isLt)).some
   edges {i} node val := match node with
@@ -643,71 +649,60 @@ def toLayered : LayeredBranchingProgram α β γ where
       if h : m = i.succ then
         .inl (h ▸ v)
       else
-        .inr ⟨⟨i, Fin.castSucc_lt_succ i⟩, ⟨u, ⟨val, lt_of_le_of_ne (Nat.succ_le_of_lt (P.edges_layer_gt u val)) (Ne.symm h)⟩⟩⟩
-    | .inr ⟨⟨l, hl⟩, u, ⟨b, hb⟩⟩ =>
-      let next := P.edges u b
-      let m := next.1
-      let v := next.2
+        .inr ⟨⟨m, v⟩,
+          ⟨lt_of_le_of_ne' (P.edges_layer_gt u val) h, ⟨i, i.castSucc_lt_succ, u, val, rfl⟩⟩⟩
+    | .inr ⟨⟨m, v⟩, hl, hr⟩ =>
       if h : m = i.succ then
         .inl (h ▸ v)
       else
-        .inr ⟨⟨l, lt_trans hl (Fin.castSucc_lt_succ i)⟩, ⟨u, ⟨b, lt_of_le_of_ne (Nat.succ_le_of_lt hb) (Ne.symm h)⟩⟩⟩
+        .inr ⟨⟨m, v⟩,
+          ⟨lt_of_le_of_ne' (Nat.succ_le_of_lt hl) h, hr.imp fun _ ⟨h₁, h₂⟩ ↦ ⟨Nat.lt_succ_of_lt h₁, h₂⟩⟩⟩
   startUnique := {
     default := .inl P.start
     uniq u := by
-      rcases u with _ | ⟨⟨l, hl⟩, _⟩
+      rcases u with _ | ⟨_, h⟩
       · simpa using P.startUnique.uniq _
-      · exact (Nat.not_lt_zero _ hl).elim
+      · simp at h
   }
   retVals u := match u with
     | .inl u => P.retVals u
-    | .inr ⟨_, ⟨_, ⟨_, hb⟩⟩⟩ => (Nat.not_lt_of_le (Fin.le_last _) hb).elim
+    | .inr u => (P.ActiveNodes_last_isEmpty.false u).elim
 
-theorem toLayered_evalAt
-      (x : α → β) (i : Fin (P.depth + 1)) (node : P.toLayered.nodes i) :
+/--
+The `evalAt` function on the converted layered branching program agrees with the `evalAt` on the original skip branching program.
+-/
+theorem toLayered_evalAt (x : α → β) (i : Fin (P.depth + 1)) (node : P.toLayered.nodes i) :
     (P.toLayered).evalAt x i node =
-    match node with
-    | .inl u => P.evalAt x u
-    | .inr ⟨_, u, b, _⟩ => P.evalAt x (P.edges u b).2 := by
-  have h_ind : ∀ j : Fin (P.depth + 1), ∀ node, (P.toLayered).evalAt x j node = match node with
-    | .inl u => P.evalAt x u
-    | .inr ⟨fst, ⟨u, ⟨b, property⟩⟩⟩ => P.evalAt x (P.edges u b).snd := by
-    intro j;
-    induction' j using Fin.reverseInduction with j ih;
-    · intro node
-      cases' node with u hu;
-      · unfold SkipBranchingProgram.toLayered LayeredBranchingProgram.evalAt;
-        simp [ Fin.ext_iff, SkipBranchingProgram.evalAt ] at *;
-      · exact False.elim <| P.ActiveEdges_last_isEmpty.elim hu;
-    · intro node;
-      convert ih ( ( P.toLayered ).edges node ( x ( ( P.toLayered ).nodeVar node ) ) ) using 1;
-      · rw [ LayeredBranchingProgram.evalAt ];
-        simp [ Fin.ext_iff];
-        exact fun h => False.elim <| h.not_lt <| Fin.is_lt j;
-      · cases node <;> simp [ SkipBranchingProgram.toLayered ];
-        · split_ifs <;> simp [ * ];
-          · rw [ SkipBranchingProgram.evalAt ];
-            simp [ Fin.ext_iff];
-            grind;
-          · rw [ SkipBranchingProgram.evalAt ];
-            simp [ Fin.ext_iff];
-            exact fun h => absurd h ( ne_of_lt j.2 );
-        · cases' ‹P.ActiveEdges j.castSucc› with l hl;
-          grind;
-  exact h_ind _ _
+      match node with
+      | .inl u => P.evalAt x u
+      | .inr ⟨⟨_, v⟩, _⟩ => P.evalAt x v := by
+  revert node
+  induction' i using Fin.reverseInduction with i ih
+  · rintro (_ | ⟨v, h⟩)
+    · simp [LayeredBranchingProgram.evalAt, toLayered]
+      unfold evalAt
+      aesop
+    · exact absurd h.1 (v.1.le_last).not_gt
+  · intro node
+    rw [LayeredBranchingProgram.evalAt_castSucc]
+    convert ih _ using 1
+    rcases node with (v | ⟨_, h₁⟩)
+    · simp [toLayered]
+      split_ifs with h <;> simp [*]
+      · convert evalAt_castSucc P x i v
+        · exact h.symm
+        · exact eqRec_heq _ _
+      · apply evalAt_castSucc
+    · simp [toLayered]
+      grind
 
-open Classical in
+/--
+The converted layered branching program computes the same function as the original skip branching program.
+-/
 @[simp]
 theorem toLayered_eval : P.toLayered.eval = P.eval := by
-  have h_eval_eq (x) : P.toLayered.eval x = P.toLayered.evalAt x 0 P.toLayered.start := by
-    rw [LayeredBranchingProgram.eval]
-    convert P.toLayered.evalAt_evalLayer_eq_eval x (Fin.last _) using 1
-    · unfold LayeredBranchingProgram.evalAt
-      simp
-    · rw [← LayeredBranchingProgram.evalAt_evalLayer_eq_eval]
-      rfl
-  ext1
-  rw [h_eval_eq, toLayered_evalAt]
-  rfl
+  ext x
+  rw [← P.toLayered.evalAt_evalLayer_eq_eval x 0]
+  exact P.toLayered_evalAt x 0 (Sum.inl P.start)
 
 end SkipBranchingProgram
