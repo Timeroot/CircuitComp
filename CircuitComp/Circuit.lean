@@ -188,10 +188,43 @@ theorem comp_depth (g : FeedForward α b c) (f : FeedForward α a b) :
     (g.comp f).depth = f.depth + g.depth := by
   rfl
 
+/-
+Helper lemma: The nodes of the composed circuit at depth `F.depth + j` correspond to the nodes of `G` at depth `j`.
+-/
+theorem comp_nodes_eq (F : FeedForward α a b) (G : FeedForward α b c) (j : Fin (G.depth + 1)) :
+    (G.comp F).nodes ⟨F.depth + j.val, Nat.add_lt_add_left j.isLt F.depth⟩ = G.nodes j := by
+  simp [FeedForward.comp]
+  rintro rfl
+  exact F.nodes_last.trans G.nodes_zero.symm
+
+instance {t1} [i1 : F.Finite] (F2 : FeedForward α t1 inp) [i2 : F2.Finite] :
+    (F.comp F2).Finite := by
+  intro d
+  change Fin (F2.depth + F.depth + 1) at d
+  by_cases hd : d.val < F2.depth + 1
+  · convert i2 (⟨d.val, by omega⟩)
+    exact dif_pos (by omega)
+  · convert i1 (⟨d - F2.depth, by omega⟩)
+    rw [← comp_nodes_eq F2 F ⟨d - F2.depth, by omega⟩]
+    congr!
+    dsimp only
+    omega
+
 @[simp]
 theorem comp_size (g : FeedForward α b c) (f : FeedForward α a b) [f.Finite] [g.Finite] :
     (g.comp f).size = f.size + g.size := by
-  sorry
+  have h_comp_finite : (g.comp f).Finite := by
+    intro
+    dsimp [comp]
+    grind
+  dsimp [size]
+  have h_split_sum : Nat.card (Σ d : Fin (f.depth + g.depth), (g.comp f).nodes d.succ) =
+      Nat.card (Σ d : Fin f.depth, (g.comp f).nodes (d.castAdd g.depth).succ) +
+      Nat.card (Σ d : Fin g.depth, (g.comp f).nodes (d.natAdd f.depth).succ) := by
+    simp [Nat.card_sigma, Fin.sum_univ_add]
+  convert h_split_sum using 2
+  · simp [comp, Nat.succ_le_iff, Fin.succ]
+  · simp [comp, add_assoc, Fin.succ]
 
 /--
 The evaluation of a node in the first part of a composed circuit `G.comp F` is
@@ -233,17 +266,6 @@ theorem evalNode_succ (F : FeedForward α inp out)
     (i : Fin F.depth) (node : F.nodes i.succ) (xs : inp → α) :
     F.evalNode node xs = (F.gates i node).eval (fun n ↦ F.evalNode n xs) := by
   rfl
-
-/-
-Helper lemma: The nodes of the composed circuit at depth `F.depth + j` correspond to the nodes of `G` at depth `j`.
--/
-theorem comp_nodes_eq
-    (F : FeedForward α a b) (G : FeedForward α b c) (j : Fin (G.depth + 1)) :
-    (G.comp F).nodes ⟨F.depth + j.val, Nat.add_lt_add_left j.isLt F.depth⟩ = G.nodes j := by
-  simp [FeedForward.comp,];
-  intro hj;
-  subst hj;
-  convert F.nodes_last.trans G.nodes_zero.symm
 
 /--
 The evaluation of a node in the second part of a composed circuit `G.comp F` is
@@ -381,19 +403,6 @@ instance {t1 t2} [Finite t1] (e : t1 ≃ t2) : (perm (α := α) e).Finite := by
   · grind
   · exact (Equiv.finite_iff e).mp ‹_›
 
-instance {t1} [i1 : F.Finite] (F2 : FeedForward α t1 inp) [i2 : F2.Finite] :
-    (F.comp F2).Finite := by
-  intro d
-  change Fin (F2.depth + F.depth + 1) at d
-  by_cases hd : d.val < F2.depth + 1
-  · convert i2 (⟨d.val, by omega⟩)
-    exact dif_pos (by omega)
-  · convert i1 (⟨d - F2.depth, by omega⟩)
-    rw [← comp_nodes_eq F2 F ⟨d - F2.depth, by omega⟩]
-    congr!
-    norm_num
-    omega
-
 /-- A `FeedForward` is said to `onlyUsesGates` from a set of `GateOp`s if every gate is one of those. -/
 def onlyUsesGates (S : Set (GateOp α)) : Prop :=
   ∀ d n, (F.gates d n).op ∈ S
@@ -410,9 +419,20 @@ theorem onlyUsesGates_comp {t2 : Type v} {F2 : FeedForward α out t2}
     (hF : F.onlyUsesGates S) (hF2 : F2.onlyUsesGates S) : (F2.comp F).onlyUsesGates S := by
   intro d n
   dsimp [comp] at n ⊢
-  replace hF := fun d ↦ hF d
-  replace hF2 := fun d ↦ hF2 d
-  sorry
+  by_cases h : d < F.depth;
+  · convert hF ⟨d, h⟩ (cast (by symm; simp; intro; omega) n)
+    simp [h]
+    grind
+  · have h_cast : (d.val - F.depth) < F2.depth := by grind [comp_depth]
+    convert hF2 ⟨d - F.depth, h_cast⟩
+      (cast (by split_ifs <;> simp_all [ Nat.succ_sub ]; omega) n) using 1
+    simp [h]
+    congr 1
+    · split_ifs
+      · simp [show d = F.depth by omega]
+        exact F.nodes_last
+      · rfl
+    · exact cast_heq _ _
 
 theorem onlyUsesGates_perm {t₁ t₂ : Type v} {e : t₁ ≃ t₂} :
     (perm e).onlyUsesGates {GateOp.id α} := by
