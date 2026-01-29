@@ -28,10 +28,10 @@ Also define `ACi`, which is like AC₀ but has `log(n)^i` depth. `AC` is the uni
 -/
 
 def AC_GateOps : Set (GateOp (Fin 2)) :=
-  {⟨Fin 0, 1⟩, --Constant one
+  {GateOp.id (Fin 2), --Id
   ⟨Fin 1, fun x ↦ 1 - x 0⟩} --NOT
   ∪
-  ⋃ n, {⟨Fin n, fun x ↦ ∏ i, x i⟩} --ANDs of all arity (including Id)
+  ⋃ n, {⟨Fin n, fun x ↦ ∏ i, x i⟩} --ANDs of all arity (including the constant 1 gate)
 
 /-- AC₀, the constant-depth polynomial-size circuits of NOT gates and arbitrary-arity AND gates. -/
 def AC₀ : Set (FuncFamily₁ (Fin 2)) :=
@@ -59,10 +59,10 @@ theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
   simp only [NC_GateOps, AC_GateOps, Set.mem_insert_iff, Set.mem_singleton_iff,
     Set.iUnion_singleton_eq_range]
   rintro (rfl|rfl|rfl|rfl)
-  · simp
   · right
-    use 1
-    simp
+    use 0
+    simp +decide
+  · simp
   · simp
   · right
     use 2
@@ -70,7 +70,7 @@ theorem NC₀_subset_AC₀ : NC₀ ⊆ AC₀ := by
 
 /-- The AND problem is contained in AC₀, because we can take a single AND gate. -/
 theorem AND_mem_AC₀ : FuncFamily₁.AND ∈ AC₀ := by
-  rw [AC₀, mem_circuitClass_iff Unit]
+  rw [AC₀, mem_circuitClass_iff (by simp [AC_GateOps]) Unit]
   use (fun n ↦ ⟨
     1,
     ![Fin n, Unit],
@@ -79,12 +79,8 @@ theorem AND_mem_AC₀ : FuncFamily₁.AND ∈ AC₀ := by
     rfl
   ⟩)
   fconstructor
-  · constructor
-    intro n
-    constructor
-    simp only [Fin.isValue, Fin.castSucc_zero, Matrix.cons_val_zero, eq_mpr_eq_cast, Nat.reduceAdd]
-    intro i
-    fin_cases i <;> simp <;> infer_instance
+  · intro n i
+    fin_cases i <;> dsimp <;> infer_instance
   and_intros
   · intro
     ext
@@ -329,10 +325,10 @@ theorem exists_good_approxAnd (vars width ℓ : ℕ)
 noncomputable section AristotleLemmas
 
 lemma AC_GateOps_cases {op : FeedForward.GateOp (Fin 2)} (h : op ∈ AC_GateOps) :
-    op = ⟨Fin 0, 1⟩ ∨
+    op = ⟨PUnit, (· ())⟩ ∨
     op = ⟨Fin 1, fun x ↦ 1 - x 0⟩ ∨
     ∃ n, op = ⟨Fin n, fun x ↦ ∏ i, x i⟩ := by
-      unfold AC_GateOps at h ; aesop;
+  unfold AC_GateOps at h ; aesop;
 
 lemma exists_poly_for_gate {n ℓ : ℕ}
     (op : FeedForward.GateOp (Fin 2)) (hop : op ∈ AC_GateOps)
@@ -351,7 +347,24 @@ lemma exists_poly_for_gate {n ℓ : ℕ}
     refine' ⟨ 0, _, Set.univ, _, _ ⟩ <;> aesop;
   · intro op hop polys;
     rcases AC_GateOps_cases hop with ( rfl | rfl | ⟨ n, rfl ⟩ );
-    · refine' ⟨ 1, _, ∅, _, _ ⟩ <;> norm_num;
+    · obtain ⟨ P, hP₁, hP₂ ⟩ := exists_good_approxAnd _ 1 ℓ (fun _ ↦ polys ())
+      use P
+      constructor
+      · convert hP₁
+        simp
+      · refine' ⟨{ x : Fin n → Fin 2 | ¬ (MvPolynomial.eval (fun j => (x j : ZMod 3)) P) = (1 - (1 - (MvPolynomial.eval (fun j => (x j : ZMod 3)) (polys ())) ) ^ 2) }, ?_, ?_⟩
+        · convert sub_le_sub_left hP₂ ( 2 ^ n : ℚ ) using 1 <;> norm_num [ Finset.card_univ ]
+          · ring_nf
+            norm_num [ Set.ncard_eq_toFinset_card' ];
+            rw [ Finset.filter_not, Finset.card_sdiff ] ; norm_num [ Finset.card_univ ]
+            ring_nf
+            rw [ Nat.cast_sub ( le_trans ( Finset.card_le_univ _ ) ( by norm_num ) ) ]
+            push_cast
+            ring
+          · field_simp
+            ring
+        · norm_num
+          intro x hx₁ hx₂; specialize hx₂ ⟨ ⟩ ; aesop;
     · refine' ⟨ 1 - polys 0, _, ∅, _, _ ⟩ <;> norm_num;
       · refine' le_trans ( MvPolynomial.totalDegree_sub _ _ ) _ ; norm_num;
         exact le_mul_of_one_le_left ( Nat.zero_le _ ) ( by linarith [ Nat.pos_of_ne_zero hℓ ] );
@@ -496,7 +509,7 @@ theorem exists_good_poly_of_circuit (n ℓ : ℕ)
       congr! 2;
       unfold FeedForward.size;
       convert Nat.card_sigma;
-      exact fun a => h_finite.finite _;
+      infer_instance
   obtain ⟨Polys, BadSet, hPolys, hBadSet, h_eval⟩ := h_error_bound;
   have h_card_eq : (Set.ncard {x : Fin n → Fin 2 | x ∈ BadSet}) + (Set.ncard {x : Fin n → Fin 2 | x ∉ BadSet}) = 2 ^ n := by
     rw [ ← Set.ncard_union_eq ];
@@ -605,7 +618,7 @@ theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial 
     )
     := by
   intros F hF
-  rw [AC₀, mem_circuitClass_iff Unit] at hF;
+  rw [AC₀, mem_circuitClass_iff (by simp [AC_GateOps]) Unit] at hF;
   obtain ⟨CF, hCF⟩ := hF;
   -- Let `size n = (CF n).size` and `depth n = (CF n).depth`.
   set size : ℕ → ℕ := fun n => (CF n).size
@@ -642,7 +655,7 @@ theorem AC₀_low_degree : ∀ F ∈ AC₀, ∃ (P : (n : ℕ) → MvPolynomial 
   obtain ⟨P, hP⟩ : ∃ P : (n : ℕ) → MvPolynomial (Fin n) (ZMod 3), (∀ n, (P n).totalDegree ≤ (2 * ℓ n) ^ D) ∧ (∀ n, {x : Fin n → Fin 2 | (F n x).val = (MvPolynomial.eval (fun i => (x i : ZMod 3)) (P n))}.ncard ≥ (1 - size n * 2^(-ℓ n : ℤ) : ℚ) * 2^n) := by
     have h_exists_poly : ∀ n, ∃ P : MvPolynomial (Fin n) (ZMod 3), (P.totalDegree ≤ (2 * ℓ n) ^ D) ∧ ({x : Fin n → Fin 2 | (F n x).val = (MvPolynomial.eval (fun i => (x i : ZMod 3)) P)}.ncard ≥ (1 - size n * 2^(-ℓ n : ℤ) : ℚ) * 2^n) := by
       intro n
-      obtain ⟨P, hP⟩ := exists_good_poly_of_circuit n (ℓ n) (CF n) (hCF.1.finite n) (hCF.2.2.2.2 n);
+      obtain ⟨P, hP⟩ := exists_good_poly_of_circuit n (ℓ n) (CF n) (hCF.1 n) (hCF.2.2.2.2 n);
       exact ⟨ P, le_trans hP.1 ( pow_le_pow_right₀ ( by linarith [ hℓ_ge_two n ] ) ( hD n ) ), by simpa only [ hCF.2.1 n ] using hP.2 ⟩;
     exact ⟨ fun n => Classical.choose ( h_exists_poly n ), fun n => Classical.choose_spec ( h_exists_poly n ) |>.1, fun n => Classical.choose_spec ( h_exists_poly n ) |>.2 ⟩;
   -- Since `polylog` is lawful, the degree of `P` is in `polylog`.

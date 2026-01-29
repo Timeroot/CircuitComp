@@ -42,7 +42,7 @@ attribute [simp] nodes_zero
 
 attribute [simp] nodes_last
 
-variable {α : Type u} {inp out a b c a₂ b₂ : Type v} (F : FeedForward α inp out)
+variable {α : Type u} {inp out a b c a₂ b₂ t₁ t₂ : Type v} (F : FeedForward α inp out)
 
 /-- The identity GateOp. -/
 abbrev GateOp.id (α : Type u) : GateOp α where
@@ -83,6 +83,19 @@ theorem eval₁_eq_eval [Unique out] (xs : inp → α) (o : out):
     F.eval₁ xs = F.eval xs o := by
   rw [eval₁, Unique.default_eq]
 
+/-- The cardinal width of a feedforward circuit is the largest number of nodes in any layer. -/
+noncomputable def width_card : Cardinal :=
+  ⨆ d, Cardinal.mk (F.nodes d)
+
+/-- The size of a feedforward circuit is the total number of gates. Note that if any layer is
+infinite, the whole sum will be zero. The inputs are nodes in the circuit but are not counted
+towards the size. -/
+noncomputable def size : ℕ :=
+  Nat.card (@Sigma (Fin F.depth) (fun d ↦ F.nodes d.succ))
+
+/-- We call a circuit finite if the number of nodes is finite. -/
+protected abbrev Finite := ∀ i, Finite (F.nodes i)
+
 /-- Relabel the input type of a `FeedForward` given an `Equiv`. -/
 def relabelIn (hF : F.depth ≠ 0) (e : inp ≃ a) : FeedForward α a out :=
   have : NeZero F.depth := ⟨hF⟩
@@ -119,8 +132,24 @@ theorem relabelOut_depth (hf : F.depth ≠ 0) (e : out ≃ inp) :
     (F.relabelOut hf e).depth = F.depth := by
   rfl
 
-def perm {t1 t2} (e : t1 ≃ t2) : FeedForward α t1 t2 :=
-  sorry
+def perm (e : t₁ ≃ t₂) : FeedForward α t₁ t₂ where
+  depth := 1
+  nodes k := if k = 0 then t₁ else t₂
+  gates k n := ⟨GateOp.id α, fun i ↦ cast (by simp; omega) (e.symm (cast (by simp) n))⟩
+  nodes_zero := by simp
+  nodes_last := by simp
+
+@[simp]
+theorem perm_depth  (e : t₁ ≃ t₂) : (perm (α := α) e).depth = 1 := by
+  rfl
+
+@[simp]
+theorem perm_size (e : t₁ ≃ t₂) : (perm (α := α) e).size = Nat.card t₂ := by
+  rcases finite_or_infinite t₂ <;> simp [size, perm, Nat.card_sigma]
+
+@[simp]
+theorem perm_eval (e : t₁ ≃ t₂) : (perm (α := α) e).eval = (· ∘ e.symm) := by
+  rfl
 
 /-- Compose two `FeedForward`s by stacking one on top of the other. -/
 def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : FeedForward α a c where
@@ -158,6 +187,11 @@ def comp {a b c : Type v} (g : FeedForward α b c) (f : FeedForward α a b) : Fe
 theorem comp_depth (g : FeedForward α b c) (f : FeedForward α a b) :
     (g.comp f).depth = f.depth + g.depth := by
   rfl
+
+@[simp]
+theorem comp_size (g : FeedForward α b c) (f : FeedForward α a b) [f.Finite] [g.Finite] :
+    (g.comp f).size = f.size + g.size := by
+  sorry
 
 /--
 The evaluation of a node in the first part of a composed circuit `G.comp F` is
@@ -281,6 +315,11 @@ theorem eval_comp (F : FeedForward α a b) (G : FeedForward α b c) : (G.comp F)
   convert FeedForward.evalNode_comp_right F G ( Fin.last G.depth ) _ _;
   grind
 
+@[simp]
+theorem eval₁_comp (F : FeedForward α a b) (G : FeedForward α b c) [Unique c] : (G.comp F).eval₁ = G.eval₁ ∘ F.eval := by
+  ext1
+  simp [eval₁]
+
 /-- Run two `FeedForward`s in "parallel" on separate inputs of equal depth . -/
 def sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b₂) (hf : f.depth = d) (hg : g.depth = d) :
     FeedForward α (a ⊕ a₂) (b ⊕ b₂) where
@@ -336,29 +375,24 @@ theorem eval_sum {d : ℕ} (f : FeedForward α a b) (g : FeedForward α a₂ b�
     · grind
   · grind
 
-/-- The cardinal width of a feedforward circuit is the largest number of nodes in any layer. -/
-noncomputable def width_card : Cardinal :=
-  ⨆ d, Cardinal.mk (F.nodes d)
+instance {t1 t2} [Finite t1] (e : t1 ≃ t2) : (perm (α := α) e).Finite := by
+  intros i
+  cases i using Fin.inductionOn <;> simp [FeedForward.perm];
+  · grind
+  · exact (Equiv.finite_iff e).mp ‹_›
 
-/-- The size of a feedforward circuit is the total number of gates. Note that if any layer is
-infinite, the whole sum will be zero. The inputs are nodes in the circuit but are not counted
-towards the size. -/
-noncomputable def size : ℕ :=
-  Nat.card (@Sigma (Fin F.depth) (fun d ↦ F.nodes d.succ))
-
-/-- We call a circuit finite if the number of nodes is finite. -/
-protected class Finite : Prop where
-  finite : ∀ i, Finite (F.nodes i)
-
-instance [inst : F.Finite] {i} : Finite (F.nodes i) :=
-  inst.finite i
-
-instance {t1 t2} (e : t1 ≃ t2) : FeedForward.Finite (perm (α := α) e) := by
-  sorry
-
-instance {t1} (F₁ : FeedForward α inp t1) (F₂ : FeedForward α t1 out) :
-    FeedForward.Finite (F₂.comp F₁) := by
-  sorry
+instance {t1} [i1 : F.Finite] (F2 : FeedForward α t1 inp) [i2 : F2.Finite] :
+    (F.comp F2).Finite := by
+  intro d
+  change Fin (F2.depth + F.depth + 1) at d
+  by_cases hd : d.val < F2.depth + 1
+  · convert i2 (⟨d.val, by omega⟩)
+    exact dif_pos (by omega)
+  · convert i1 (⟨d - F2.depth, by omega⟩)
+    rw [← comp_nodes_eq F2 F ⟨d - F2.depth, by omega⟩]
+    congr!
+    norm_num
+    omega
 
 /-- A `FeedForward` is said to `onlyUsesGates` from a set of `GateOp`s if every gate is one of those. -/
 def onlyUsesGates (S : Set (GateOp α)) : Prop :=
@@ -371,6 +405,18 @@ theorem onlyUsesGates_mono (hS : S ⊆ T) (hF : F.onlyUsesGates S) :
   intro d n
   specialize hF d n
   exact hS hF
+
+theorem onlyUsesGates_comp {t2 : Type v} {F2 : FeedForward α out t2}
+    (hF : F.onlyUsesGates S) (hF2 : F2.onlyUsesGates S) : (F2.comp F).onlyUsesGates S := by
+  intro d n
+  dsimp [comp] at n ⊢
+  replace hF := fun d ↦ hF d
+  replace hF2 := fun d ↦ hF2 d
+  sorry
+
+theorem onlyUsesGates_perm {t₁ t₂ : Type v} {e : t₁ ≃ t₂} :
+    (perm e).onlyUsesGates {GateOp.id α} := by
+  simp [onlyUsesGates, perm]
 
 /-
 The set of inputs that a node at a given layer depends on. Defined by induction on the layer depth.
@@ -481,11 +527,10 @@ def hasDepth (f : GrowthRate) : Prop :=
   (fun n ↦ (CF n).depth) ∈ f
 
 /-- Predicate expressing that all circuits in the family are finite. -/
-protected class Finite : Prop where
-  finite : ∀ n, (CF n).Finite
+protected abbrev Finite := ∀ n, (CF n).Finite
 
 instance [inst : CF.Finite] {n} : (CF n).Finite :=
-  inst.finite n
+  inst n
 
 /-- Predicate expressing that the size grows as O(f n). -/
 def hasSize (f : GrowthRate) [CF.Finite]: Prop :=
@@ -511,7 +556,7 @@ lemma FeedForward.size_relabelOut {α inp out a} (F : FeedForward α inp out) (h
 
 instance {α inp out a} (F : FeedForward α inp out) (hF : F.depth ≠ 0) (e : out ≃ a) [Finite a] [F.Finite] :
     (F.relabelOut hF e).Finite := by
-  constructor; intro i
+  intro i
   dsimp only [relabelOut]
   split_ifs
   · infer_instance
@@ -599,7 +644,8 @@ theorem mem_circuitClass_iff_exists_out : fs ∈ CircuitClass size depth gates �
 
 variable [LawfulGrowthRate size] [LawfulGrowthRate depth]
 
-theorem mem_circuitClass_iff_forall_out : fs ∈ CircuitClass size depth gates ↔
+theorem mem_circuitClass_iff_forall_out (h_id : GateOp.id α ∈ gates) :
+  fs ∈ CircuitClass size depth gates ↔
   ∀ (out : Type) [Unique out],
     ∃ (CF : CircuitFamily₁ α out) (_ : CF.Finite),
       CF.computes₁ fs
@@ -610,22 +656,21 @@ theorem mem_circuitClass_iff_forall_out : fs ∈ CircuitClass size depth gates �
   refine ⟨?_, fun h ↦ ⟨Unit, _, h Unit⟩⟩
   intro ⟨out, u, CF, h_fin, h_comp, h_size, h_depth, h_gates⟩ out₂ _
   use fun n ↦ (perm (Equiv.ofUnique out out₂)).comp (CF n)
-  use ⟨inferInstance⟩
+  use inferInstance
   and_intros
-  · simp [computes₁]
-    --eval₁ of comp
-    sorry
-  · simp [hasSize, CircuitFamily.hasSize]
-    --size of comp
-    sorry
-  · simp [hasDepth, CircuitFamily.hasDepth]
-    --already have depth of 1. Need perm.depth, and then use `add_const` of LawfulGrowthRate.
-    sorry
-  · --onlyUsesGates of comp
-    sorry
+  · intro n
+    ext1
+    simp [← h_comp n, eval₁, perm_eval]
+  · simp [CircuitFamily.hasSize]
+    exact GrowthRate.add h_size GrowthRate.one_mem
+  · simp [CircuitFamily.hasDepth]
+    exact GrowthRate.add h_depth GrowthRate.one_mem
+  · intro n
+    apply onlyUsesGates_comp (h_gates n)
+    exact FeedForward.onlyUsesGates_mono (by simpa) onlyUsesGates_perm
 
 variable {size depth gates fs} in
-theorem mem_circuitClass_iff (out : Type) [Unique out] :
+theorem mem_circuitClass_iff (h_id : GateOp.id α ∈ gates) (out : Type) [Unique out] :
   fs ∈ CircuitClass size depth gates ↔
     ∃ (CF : CircuitFamily₁ α out) (_ : CF.Finite),
         CF.computes₁ fs
@@ -634,7 +679,8 @@ theorem mem_circuitClass_iff (out : Type) [Unique out] :
         ∧ CF.onlyUsesGates gates := by
   constructor
   · rw [mem_circuitClass_iff_forall_out]
-    exact fun h ↦ h out
+    · exact fun h ↦ h out
+    · exact h_id
   · rw [mem_circuitClass_iff_exists_out]
     exact fun h ↦ ⟨out, _, h⟩
 

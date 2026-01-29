@@ -486,7 +486,7 @@ variable {α : Type u} {β : Type v} {γ : Type w} (P : BranchingProgram α β �
 Conversion from `BranchingProgram` to `SkipBranchingProgram`.
 Restricts nodes to those reachable from the start node.
 -/
-def toSkipBranchingProgram : SkipBranchingProgram α β γ where
+def toSkip : SkipBranchingProgram α β γ where
   depth := P.depth
   nodes := fun i ↦ { u : P.nodes // P.height u = P.depth - i ∧ P.Reachable u }
   nodeVar := fun {i} ⟨u, hu⟩ ↦
@@ -545,33 +545,32 @@ def toSkipBranchingProgram : SkipBranchingProgram α β γ where
     exact ⟨ h_nonempty.choose_spec.choose ⟩)
 
 @[simp]
-theorem toSkipBranchingProgram_depth :
-    P.toSkipBranchingProgram.depth = P.depth :=
+theorem toSkip_depth : P.toSkip.depth = P.depth :=
   rfl
 
 @[simp]
-theorem toSkipBranchingProgram_start :
-    P.toSkipBranchingProgram.start.val = P.start :=
+theorem toSkip_start :
+    P.toSkip.start.val = P.start :=
   rfl
 
-theorem toSkipBranchingProgram_evalAt
-    (x : α → β) (i : Fin P.depth.succ) (u : P.toSkipBranchingProgram.nodes i) :
-    P.toSkipBranchingProgram.evalAt x u = P.evalAt x u.1 := by
-  induction' n : P.toSkipBranchingProgram.depth - i.val using Nat.strong_induction_on with n ih generalizing i u;
+theorem toSkip_evalAt
+    (x : α → β) (i : Fin P.depth.succ) (u : P.toSkip.nodes i) :
+    P.toSkip.evalAt x u = P.evalAt x u.1 := by
+  induction' n : P.toSkip.depth - i.val using Nat.strong_induction_on with n ih generalizing i u;
   unfold SkipBranchingProgram.evalAt
   split_ifs with h;
-  · unfold BranchingProgram.evalAt;
+  · unfold evalAt;
     have h_layer : P.height u.val = P.depth - i := by
       exact u.2.1;
     have h_leaf : ∃ res, P.info u.val = .inl res := by
       convert leaf_of_layer_eq_depth P u.val _;
-      rw [ h_layer, h, Fin.val_last, toSkipBranchingProgram_depth ];
+      rw [ h_layer, h, Fin.val_last, toSkip_depth ];
     rw [ WellFounded.fix_eq ];
-    unfold BranchingProgram.toSkipBranchingProgram; aesop;
+    unfold toSkip; aesop;
   · convert ih _ _ _ _ rfl using 1;
-    · unfold BranchingProgram.evalAt;
+    · unfold evalAt;
       rw [ WellFounded.fix_eq, WellFounded.fix_eq ];
-      unfold BranchingProgram.toSkipBranchingProgram
+      unfold toSkip
       simp
       let h_info := P.info u.val
       cases h : h_info
@@ -583,20 +582,20 @@ theorem toSkipBranchingProgram_evalAt
     · rw [ ← n ];
       apply Nat.sub_lt_sub_left
       · exact lt_of_le_of_ne ( Fin.le_last _ ) ( by simpa [ Fin.ext_iff ] using h );
-      · convert P.toSkipBranchingProgram.edges_layer_gt _ _;
+      · convert P.toSkip.edges_layer_gt _ _;
         rotate_left;
         exact Fin.castPred i h;
         exact ⟨ u.1, by simpa [ Fin.castSucc_castPred ] using u.2 ⟩;
-        exact x ( P.toSkipBranchingProgram.nodeVar ( Fin.castSucc_castPred i h ▸ u ) );
+        exact x ( P.toSkip.nodeVar ( Fin.castSucc_castPred i h ▸ u ) );
         exact Fin.val_fin_lt
 
 /--
 The conversion from BranchingProgram to SkipBranchingProgram preserves semantics (eval).
 -/
 @[simp]
-theorem toSkipBranchingProgram_eval : P.toSkipBranchingProgram.eval = P.eval := by
+theorem toSkip_eval : P.toSkip.eval = P.eval := by
   ext1
-  rw [SkipBranchingProgram.eval, eval, toSkipBranchingProgram_evalAt, toSkipBranchingProgram_start]
+  rw [SkipBranchingProgram.eval, eval, toSkip_evalAt, toSkip_start]
 
 end BranchingProgram
 

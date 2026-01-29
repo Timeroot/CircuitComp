@@ -9,7 +9,7 @@ open CircuitFamily
 identity gate (for forwarding operations between layers) and a constant gate (for the 0-ary case). -/
 def NC_GateOps : Set (GateOp (Fin 2)) :=
   {⟨Fin 0, 1⟩, --Constant one gate
-   ⟨Fin 1, (· 0)⟩, --Id
+   GateOp.id (Fin 2), --Id
    ⟨Fin 1, fun x ↦ 1 - x 0⟩, --NOT
   ⟨Fin 2, fun x ↦ x 0 * x 1⟩} --AND
 
@@ -46,7 +46,8 @@ lemma NC₀_fanin_le_2 : ∀ op ∈ NC_GateOps, Finite op.ι ∧ Nat.card op.ι 
 /-- Any function family in NC₀ has a bounded arity (more precisely, a bounded size `EssDomain`). -/
 theorem bounded_essDomain_of_mem_NC₀ {fn : FuncFamily₁ (Fin 2)} (h : fn ∈ NC₀) :
     ∃ k, ∀ n, (fn n).EssDomain.ncard ≤ k := by
-  rw [NC₀, mem_circuitClass_iff Unit] at h
+  rw [NC₀, mem_circuitClass_iff ?_ Unit] at h
+  swap; simp [NC_GateOps]
   obtain ⟨CF, hCF₁, hCF₂, hCF₃, hCF₄, hCF₅⟩ := h
   obtain ⟨C, hC⟩ := GrowthRate.bounded_of_const hCF₄
   use 2 ^ C
@@ -93,7 +94,7 @@ def NC1_AND_CircuitFamily : CircuitFamily₁ (Fin 2) (Fin 1) := fun n ↦
       if hx : x.val + 1 = ⌈(n / 2 ^ d.succ.val : ℚ)⌉₊ ∧ ⌈(n / 2 ^ d.val : ℚ)⌉₊ % 2 = 1 then
         --Well, if x is the last one in its layer and the parent layer is odd,
         --then we just use an identity gate.
-        ⟨⟨Fin 1, (· 0)⟩, fun _ ↦ ⟨2 * x.val,
+        ⟨⟨PUnit, (· ())⟩, fun _ ↦ ⟨2 * x.val,
           let _ := hn; let _ := hx; by
           rw [Nat.lt_ceil, Nat.cast_mul]
           convert mul_lt_mul_of_pos_left (Nat.lt_ceil.mp x.is_lt) zero_lt_two using 1
@@ -132,7 +133,7 @@ def NC1_AND_CircuitFamily : CircuitFamily₁ (Fin 2) (Fin 1) := fun n ↦
       exact div_le_one_of_le₀ (mod_cast Nat.le_pow_clog one_lt_two _) (by positivity)⟩
 
 instance : NC1_AND_CircuitFamily.Finite := by
-  refine ⟨fun n ↦ ⟨fun i ↦ ?_⟩⟩
+  refine fun n ↦ fun i ↦ ?_
   cases n <;> simpa [NC1_AND_CircuitFamily] using Finite.of_fintype _
 
 noncomputable section AristotleLemmas
@@ -146,7 +147,7 @@ def NC1_AND_Circuit_pos (n : ℕ) (hn : 0 < n) : FeedForward (Fin 2) (Fin n) (Fi
     nodes := fun k ↦ Fin ⌈n / (2^k.val : ℚ)⌉₊
     gates := fun d x ↦
       if hx : x.val + 1 = ⌈(n / 2 ^ d.succ.val : ℚ)⌉₊ ∧ ⌈(n / 2 ^ d.val : ℚ)⌉₊ % 2 = 1 then
-        ⟨⟨Fin 1, (· 0)⟩, fun _ ↦ ⟨2 * x.val, by
+        ⟨⟨PUnit, (· ())⟩, fun _ ↦ ⟨2 * x.val, by
           rw [ eq_comm, Nat.ceil_eq_iff ] at hx <;> norm_num at *;
           rw [ lt_div_iff₀ ] at * <;> norm_cast at * <;> norm_num [ pow_succ' ] at *;
           rw [ Nat.lt_ceil, lt_div_iff₀ ] <;> norm_cast <;> norm_num [ pow_succ' ] at * ; nlinarith [ pow_pos ( zero_lt_two' ℕ ) d.val ]⟩⟩
@@ -214,15 +215,15 @@ open scoped BigOperators
 lemma target_prod_split (n : ℕ) (inputs : Fin n → Fin 2) (d i : ℕ) :
     target_prod n inputs (d + 1) i =
     target_prod n inputs d (2 * i) * target_prod n inputs d (2 * i + 1) := by
-      unfold target_prod;
-      rw [ ← Finset.prod_union ]
-      · congr
-        ring_nf
-        -- The union of the two intervals covers the entire range from the start of the first interval to the end of the second interval.
-        ext; simp [Finset.mem_Ico, Finset.mem_union];
-        grind;
-      · ring_nf
-        exact Finset.disjoint_left.mpr fun x hx₁ hx₂ => by linarith [ Finset.mem_Ico.mp hx₁, Finset.mem_Ico.mp hx₂, min_le_left ( i * 2 ^ d * 2 + 2 ^ d ) n, min_le_left ( i * 2 ^ d * 2 + 2 ^ d * 2 ) n ] ;
+  unfold target_prod;
+  rw [ ← Finset.prod_union ]
+  · congr
+    ring_nf
+    -- The union of the two intervals covers the entire range from the start of the first interval to the end of the second interval.
+    ext; simp [Finset.mem_Ico, Finset.mem_union];
+    grind;
+  · ring_nf
+    exact Finset.disjoint_left.mpr fun x hx₁ hx₂ => by linarith [ Finset.mem_Ico.mp hx₁, Finset.mem_Ico.mp hx₂, min_le_left ( i * 2 ^ d * 2 + 2 ^ d ) n, min_le_left ( i * 2 ^ d * 2 + 2 ^ d * 2 ) n ] ;
 /-
 If the start index of the target product range is out of bounds, the product is 1.
 -/
@@ -277,14 +278,10 @@ theorem NC1_AND_CircuitFamily_computes : NC1_AND_CircuitFamily.computes₁ FuncF
     unfold FeedForward.eval₁ FuncFamily₁.AND FeedForward.eval;
     funext xs;
     convert NC1_AND_Circuit_pos_evalNode n ( Nat.pos_of_ne_zero hn ) xs ⟨ Nat.clog 2 n, Nat.lt_succ_self _ ⟩ ⟨ 0, Nat.pos_of_ne_zero _ ⟩;
-    all_goals norm_num [ target_prod ];
-    · convert congr_arg Fin.val ( show (_ : Fin 1) = 0 from Fin.ext <| by aesop );
-      rw [ Nat.ceil_eq_iff ] <;> norm_num;
-      field_simp;
-      exact ⟨ Nat.pos_of_ne_zero hn, mod_cast Nat.le_pow_clog ( by decide ) _ ⟩;
-    · rw [ min_eq_right ];
-      · simp [Finset.prod_range]
-      · exact Nat.le_pow_clog ( by decide ) _;
+    · simp [eqRec_eq_cast, Fin.cast_eq_cast']
+    · simp only [target_prod, zero_add, one_mul]
+      rw [min_eq_right (Nat.le_pow_clog one_lt_two _)]
+      simp [Finset.prod_range]
     · positivity
 
 noncomputable section AristotleLemmas
@@ -370,7 +367,8 @@ end AristotleLemmas
 
 /-- The AND problem is contained in NC₁, because we can make a log-depth tree of ANDs. -/
 theorem AND_mem_NCi_1 : FuncFamily₁.AND ∈ NCi 1 := by
-  simp_rw [NCi, pow_one, GrowthRate.bigO_log2_eq_log, mem_circuitClass_iff (Fin 1)]
+  simp_rw [NCi, pow_one, GrowthRate.bigO_log2_eq_log]
+  rw [mem_circuitClass_iff (by simp [NC_GateOps]) (Fin 1)]
   refine ⟨NC1_AND_CircuitFamily, inferInstance, ?_, ?_, ?_, ?_⟩
   · exact NC1_AND_CircuitFamily_computes
   · open GrowthRate in exact
