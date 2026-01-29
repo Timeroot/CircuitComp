@@ -194,7 +194,7 @@ theorem width_toBranchingProgram (σ : G)
   apply ciSup_le
   unfold toBranchingProgram
   intro x
-  simp only [Nat.succ_eq_add_one, Fin.val_eq_zero_iff]
+  simp only [Fin.val_eq_zero_iff]
   split
   · subst x
     simp
@@ -646,18 +646,26 @@ The node reached at layer k in the converted branching program corresponds to th
 theorem GroupProgram.toBranchingProgram_evalLayer_eq_eval_partial {n : ℕ} (GP : GroupProgram (Fin n) (Equiv.Perm (Fin 5))) (σ : Equiv.Perm (Fin 5)) (x : Fin n → Fin 2) (k : ℕ) (hk : k ≤ GP.len) (hk0 : 0 < k) :
     cast (toBranchingProgram_nodes_eq_fin5 GP σ k hk hk0) ((GP.toBranchingProgram σ (Fin 5)).evalLayer ⟨k, Nat.lt_succ_of_le hk⟩ x) = (GP.eval_partial k x) 0 := by
   generalize_proofs at *;
-  induction' k with k ih <;> simp_all [ Nat.succ_eq_add_one ];
-  cases k <;> simp_all [ Nat.succ_eq_add_one]
-  · unfold eval_partial;
-    rcases GP with ⟨ _ | _, _, _, _ ⟩ <;> norm_num [ List.finRange ] at *;
-    unfold toBranchingProgram; aesop;
-  · rename_i k hk₁ hk₂;
-    convert congr_arg ( fun u => ( if x ( GP.var ⟨ k + 1, by linarith ⟩ ) = 1 then GP.perm1 ⟨ k + 1, by linarith ⟩ else GP.perm0 ⟨ k + 1, by linarith ⟩ ) u ) ( ih ( by linarith ) ( by exact Nat.lt_of_succ_lt ( by linarith ) ) ( by
-      exact hk₂ ) ) using 1
-    generalize_proofs at *;
-    unfold eval_partial
-    simp [List.take_succ]
-    split_ifs <;> simp_all
+  induction' k with k ih
+  · simp_all
+  cases k
+  · rcases GP with ⟨ _ | _, _, _, _ ⟩
+    · simp at hk
+    · simp [eval_partial, List.finRange, toBranchingProgram]
+      aesop
+  · simp +contextual only at ih
+    rename_i h₁ h₂ h₃
+    specialize ih (by linarith) (by linarith) (by grind)
+    unfold toBranchingProgram eval_partial at ih ⊢
+    simp [LayeredBranchingProgram.evalLayer, LayeredBranchingProgram.start,
+      Fin.inductionOn, Fin.induction, List.take_succ] at ih ⊢
+    rw [List.getElem?_eq_getElem (by norm_num; linarith)]
+    simp only [List.getElem_finRange, Fin.cast_mk, Option.elim_some]
+    split_ifs with h
+    · simp [Fin.induction.go] at ih ⊢
+      simp [ih, h]
+    · simp [Fin.induction.go] at ih ⊢
+      simp [ih, h]
 
 /-
 The evaluation of the converted branching program is correct (assuming length > 0).
@@ -815,3 +823,17 @@ theorem NC1_subset_BPClass_five : NCi 1 ⊆ BPClass (·≤5) .poly true := by
     exact hcf_depth
   · intro _
     apply GroupProgram.of_CircuitFamily_IsOblivious
+
+section branchingProgramToCircuit
+
+/- Define a circuit that computes the output of a branching program, to show that constant-width
+branching programs can be computed in log-depth.
+
+Start by defining the relevant gates in a one-hot encoding, then define the binary-division structure
+of the circuit, then the circuit itself, and then prove correctness. This will give a circuit of
+linear size in the input and depth log2(n) (up to an additive constant). The initial gates are not
+all NC_GateOps, since they use gates of an arity greater than 2 for combining two one-hot encodings.
+
+Later we'll show how to "compile" this circuit to use only arity-2 gates, with some constant increase
+in size and depth.
+-/
