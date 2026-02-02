@@ -14,23 +14,26 @@ noncomputable section
 variable {α : Type u} {β : Type v} {γ : Type w}
 variable [Fintype α] [Fintype β] [Fintype γ] [Nonempty α] [Nonempty β] (F : (α → β) → γ)
 
+/-- Helper equivalences for defining `thinBP`. -/
+noncomputable def thinBP_eab : Fin (Fintype.card β ^ Fintype.card α) ≃ (α → β) :=
+  let ea := Fintype.equivFin α
+  let eb := Fintype.equivFin β
+  finFunctionFinEquiv.symm.trans (ea.symm.arrowCongr eb.symm)
+
+abbrev thinBP_index : (α → β) ≃ Fin (Fintype.card β ^ Fintype.card α) :=
+  thinBP_eab.symm
+
 /--
 Construct a think branching program for a function F. It keeps constant width but
 has exponential depth.
 -/
 def thinBP : LayeredBranchingProgram α β γ :=
-  letI a := Fintype.card α
-  letI b := Fintype.card β
   letI c := Fintype.card γ
   haveI : NeZero c := ⟨(Fintype.card_pos_iff.mpr ⟨F (fun _ ↦ Classical.arbitrary β)⟩).ne'⟩
   letI ea := Fintype.equivFin α
-  letI eb := Fintype.equivFin β
   letI ec := Fintype.equivFin γ
-  -- Map the numbers `b ^ a` to strings of `a` many β's. Used for indexing the layers.
-  letI eab : Fin (b ^ a) → α → β :=
-    (ea.symm.arrowCongr eb.symm) ∘ finFunctionFinEquiv.symm
   letI γ0 := ec.symm 0 --one particular value of γ
-  { depth := a * b ^ a
+  { depth := Fintype.card α * Fintype.card β ^ Fintype.card α
     --Nodes are 2 special nodes, plus one more for each γ ... except for γ0.
     --We run through checks of each length-α string of β's, staying at (.inl 0) as long
     --as the check is passing, and failing to (.inl 1) if it fails. If we pass the
@@ -39,7 +42,7 @@ def thinBP : LayeredBranchingProgram α β γ :=
     --but that's the difference between showing every Boolean function can be computed in width 3
     --and showing it can be computed in width 4, which is enough to care about!
     nodes i := if i = 0 then PUnit else ULift (Fin 2 ⊕ Fin (c - 1))
-    nodeVar {i} _ := ea.symm ⟨i % a, Nat.mod_lt i Fintype.card_pos⟩
+    nodeVar {i} _ := ea.symm ⟨i % Fintype.card α, Nat.mod_lt i Fintype.card_pos⟩
     edges {i} f j := by
       split_ifs with h₁
       · simp at h₁
@@ -47,13 +50,15 @@ def thinBP : LayeredBranchingProgram α β γ :=
       if h_first : i.val = 0 ∨ (∃ h, f = cast (if_neg h).symm (ULift.up (.inl 0))) then
         -- This is (.inl 0). Continue a check, unless we're finishing a check in which case
         -- we branch to the appropriate output node.
-        let nextβ := eab (⟨i.val / a, Nat.div_lt_of_lt_mul <| by omega⟩) (ea.symm ⟨i % a, Nat.mod_lt i Fintype.card_pos⟩)
+        let nextβ := thinBP_eab (β := β)
+          (⟨i.val / Fintype.card α, Nat.div_lt_of_lt_mul <| by omega⟩)
+          (ea.symm ⟨i % Fintype.card α, Nat.mod_lt i Fintype.card_pos⟩)
         if nextβ = j then
           --The check passed. Continue on (.inl 0), unless we're at the end of the check.
-          if i.val % a = a - 1 then
+          if i.val % Fintype.card α = Fintype.card α - 1 then
             --Get the output γ value from `F` and branch to the appropriate (.inr) node. But if it's γ0,
             -- we stay on (.inl 0) instead.
-            let γOut := F (eab (⟨i.val / a, Nat.div_lt_of_lt_mul <| by omega⟩))
+            let γOut := F (thinBP_eab (⟨i.val / Fintype.card α, Nat.div_lt_of_lt_mul <| by omega⟩))
             if hγOut : γOut = γ0 then
               exact .up (.inl 0)
             else
@@ -66,7 +71,7 @@ def thinBP : LayeredBranchingProgram α β γ :=
         else
           --The check failed. Continue on (.inl 1), unless that was the end of the check in which case
           -- we stay on (.inl 0) for the next check immediately.
-          exact if i.val % a = a - 1 then
+          exact if i.val % Fintype.card α = Fintype.card α - 1 then
             --The check failed at the end. Reset back to (.inl 0) for the next check immediately.
             .up (.inl 0)
           else
@@ -82,7 +87,7 @@ def thinBP : LayeredBranchingProgram α β γ :=
         exact (show f ≠ .up (.inl 0) from (h_first <| .inr ⟨hf₁, ·⟩)) (by ext; simpa)
       · -- This is (.inl 1). Do nothing and stay, unless we just finished a check and so
         -- we reset back to (.inl 0).
-        exact if i.val % a = a - 1 then
+        exact if i.val % Fintype.card α = Fintype.card α - 1 then
           .up (.inl 0)
         else
           .up (.inl 1)
@@ -101,7 +106,6 @@ def thinBP : LayeredBranchingProgram α β γ :=
         · exact γ0
         · exact ec.symm ⟨val + 1, by omega⟩
   }
-
 
 instance thinBP_Finite [Fintype β] : (thinBP F).Finite where
   finite i := by
@@ -133,18 +137,13 @@ theorem thinBP_width : (thinBP F).width = Fintype.card γ + 1 := by
 --Proving the correctness of `thinBP`.
 section thinBP_proof
 
+theorem thinBP_depth : (thinBP F).depth = Fintype.card α * Fintype.card β ^ Fintype.card α := by
+  rfl
+
 instance thinBP_depth_pos : NeZero (thinBP F).depth := by
+  rw [thinBP_depth]
   constructor
-  rw [thinBP]
   positivity
-
-noncomputable def thinBP_eab : Fin (Fintype.card β ^ Fintype.card α) ≃ (α → β) :=
-  let ea := Fintype.equivFin α
-  let eb := Fintype.equivFin β
-  finFunctionFinEquiv.symm.trans (ea.symm.arrowCongr eb.symm)
-
-abbrev thinBP_index : (α → β) ≃ Fin (Fintype.card β ^ Fintype.card α) :=
-  thinBP_eab.symm
 
 /-- Auxiliary predicate for `thinBP_CorrectState`: does the first `pos` symbols of `x` match
 the target string defined by `k`? -/
@@ -155,8 +154,8 @@ def thinBP_match (k : Fin (Fintype.card β ^ Fintype.card α)) (pos : ℕ)
   ∀ j : Fin pos, x (ea.symm ⟨j, by omega⟩) = target (ea.symm ⟨j, by omega⟩)
 
 omit [Nonempty α] [Nonempty β] in
-lemma thinBP_match_zero (k : Fin (Fintype.card β ^ Fintype.card α)) (x : α → β) :
-    thinBP_match k 0 (by omega) x :=
+lemma thinBP_match_zero (k : Fin (Fintype.card β ^ Fintype.card α)) (x : α → β) (h : 0 ≤ Fintype.card α):
+    thinBP_match k 0 h x :=
   fun j ↦ by cases j; trivial
 
 omit [Nonempty α] [Nonempty β] in
@@ -232,8 +231,110 @@ theorem thinBP_CorrectState_zero {s} (x : α → β) :
 
 theorem thinBP_CorrectState_one (x : α → β) :
     thinBP_CorrectState F 1 x (evalLayer (thinBP F) 1 x) := by
-  simp [thinBP_CorrectState, (thinBP_depth_pos F).out]
-  sorry
+  have ha : 0 < Fintype.card α := by
+    positivity
+  have h_cond2 : 0 < Fintype.card β ^ Fintype.card α := by
+    positivity
+  have h_depth : 1 < (thinBP F).depth + 1 := by
+    rw [thinBP_depth]
+    rw [← Nat.add_one_le_iff] at ha h_cond2
+    grw [← h_cond2, ← ha]
+    norm_num
+  simp only [thinBP_CorrectState, Fin.coe_ofNat_eq_mod, Nat.one_mod_eq_zero_iff, Nat.add_eq_right,
+    (thinBP_depth_pos F).out, ↓reduceDIte, ne_eq, Fin.isValue]
+  let _ := @Classical.inhabited_of_nonempty α ‹_›
+  rcases nontrivialPSumUnique α with h_2a | h_uniq
+  · have hcα : 1 < Fintype.card α := by
+      rwa [Fintype.one_lt_card_iff_nontrivial]
+    have h_cond1 : 1 % ((thinBP F).depth + 1) / Fintype.card α = 0 := by
+      apply Nat.div_eq_of_lt
+      rwa [Nat.mod_eq_of_lt h_depth]
+    have hz : ¬(0 = Fintype.card α - 1) := by
+      omega
+    simp only [h_cond1, not_lt_zero', false_and, ↓reduceDIte, h_cond2, Fin.mk_zero', Fin.isValue,
+      Fin.coe_ofNat_eq_mod]
+    rw! [h_cond1, Fin.mk_zero']
+    rw! [show (1 : Fin (thinBP F).depth.succ) = Fin.succ 0 by simp]
+    simp only [evalLayer_succ, Fin.castSucc_zero, cast_eq, Fin.isValue, evalLayer_zero]
+    simp only [thinBP, Fin.castSucc_eq_zero_iff, Fin.succ_ne_zero, ↓reduceDIte, ↓dreduceIte,
+      Fin.val_eq_zero_iff, Fin.isValue, dite_eq_ite, cast_eq, Fin.zero_eta, id_eq, eq_mpr_eq_cast,
+      Fin.last_eq_zero_iff, mul_eq_zero, Fintype.card_ne_zero, Nat.pow_eq_zero, ne_eq,
+      not_false_eq_true, and_true, or_self, eq_mp_eq_cast, ↓dreduceDIte, Lean.Elab.WF.paramLet,
+      Fin.coe_ofNat_eq_mod, Nat.zero_mod, Fin.mk_zero', Fin.castSucc_zero, not_true_eq_false,
+      IsEmpty.exists_iff, or_false, Nat.zero_div, hz, ↓reduceIte, ite_eq_left_iff, ULift.up.injEq,
+      Sum.inl.injEq, one_ne_zero, imp_false, not_not, ite_eq_right_iff, zero_ne_one]
+    have h_cond3 : 1 % (Fintype.card α * Fintype.card β ^ Fintype.card α + 1) % Fintype.card α = 1 := by
+      have h4 : 1 % (Fintype.card α * Fintype.card β ^ Fintype.card α + 1) = 1 :=
+        Nat.mod_eq_of_lt h_depth
+      rwa [h4, Nat.mod_eq_of_lt]
+    rw! [h_cond3, thinBP_match_succ]
+    rw [eq_true (thinBP_match_zero _ _ _), true_and, eq_comm]
+    split_ifs with h <;> exact h
+  · have h_cond1 : 1 % ((thinBP F).depth + 1) / 1 = 1 := by
+      simpa using h_depth
+    simp only [Fintype.card_unique, Nat.div_one, pow_one, isUnit_iff_eq_one, IsUnit.dvd,
+      Nat.mod_mod_of_dvd, Nat.mod_self, Fin.isValue, Fin.coe_ofNat_eq_mod]
+    have ha : Fintype.card α = 1 := Fintype.card_unique
+    rw! (castMode := .all) [ha, Nat.mod_one]
+    rw! [h_cond1]
+    conv =>
+      enter [3, h, 2, h₂]
+      rw [if_pos (thinBP_match_zero _ _ _)]
+    rw! [show (1 : Fin (thinBP F).depth.succ) = Fin.succ 0 by simp]
+    simp only [evalLayer_succ, Fin.castSucc_zero, cast_eq, Fin.isValue, evalLayer_zero]
+    simp only [Nat.lt_one_iff, Fin.val_eq_zero_iff, thinBP, Fin.castSucc_eq_zero_iff,
+      Fin.succ_ne_zero, ↓dreduceDIte, ↓dreduceIte, Fin.isValue, Fintype.card_unique, tsub_self,
+      Lean.Elab.WF.paramLet, Nat.div_one, dite_eq_ite, cast_eq, Fin.zero_eta, id_eq, eq_mpr_eq_cast,
+      Fin.last_eq_zero_iff, pow_one, one_mul, Fintype.card_ne_zero, eq_mp_eq_cast,
+      Fin.coe_ofNat_eq_mod, Nat.zero_mod, Nat.mod_succ, Fin.mk_zero', Fin.castSucc_zero,
+      not_true_eq_false, IsEmpty.exists_iff, or_false, ↓reduceDIte, ↓reduceIte, ite_eq_right_iff,
+      dite_eq_left_iff, ULift.up.injEq, reduceCtorEq, imp_false, not_not, ite_self]
+    split_ifs with h₁ h₂ h₃
+    · exfalso
+      apply h₁.right
+      convert h₃
+      ext1
+      simpa [Unique.eq_default] using h₂.symm
+    · congr 7
+      simpa [ha, funext_iff, Unique.eq_default] using h₂
+    · exfalso
+      -- Since α has only one element, the function x is determined entirely by its value at that element. Therefore, the index of x should be the same as the index of the constant function.
+      have h_const : x = fun _ => x (Classical.arbitrary α) := by
+        exact funext fun a => by rw [ Fintype.card_eq_one_iff ] at ha; obtain ⟨ b, hb ⟩ := ha; aesop;
+      rw [ h_const ] at h₁
+      simp [thinBP_index] at h₁
+      convert (thinBP_index.symm.apply_eq_iff_eq_symm_apply
+        (x := ⟨0, h_cond2⟩) (y := fun _ ↦ x (Classical.arbitrary α))).mpr _;
+      · grind
+      · convert h₁.1.symm using 1;
+        · rw [ ha ];
+        · exact (Fin.heq_ext_iff (congrArg (HPow.hPow (Fintype.card β)) ha)).mpr rfl;
+        · congr! 1;
+          · rw [ ha ];
+          · exact funext fun _ => by rw [ ha ] ;
+          · grind;
+          · grind;
+    · push_neg at h₁
+      simp only [Nat.lt_one_iff, Fin.val_eq_zero_iff] at h₁
+      have hx_const : ∃ b : β, x = fun _ => b := by
+        exact ⟨x default, funext fun a => by rw [ show a = default from Subsingleton.elim _ _ ]⟩
+      obtain ⟨b, rfl⟩ := hx_const
+      intro h
+      simp only [thinBP_index] at h₁ h
+      convert h₁ _ using 2
+      · simpa [funext_iff, Unique.eq_default] using h
+      · convert congr_arg ( (thinBP_eab (α := α) (β := β)).symm ) ( show ( fun _ => b ) = thinBP_eab 0 from _ ) using 1;
+        any_goals exact congrArg Fin (congrArg (HPow.hPow (Fintype.card β)) (id (Eq.symm ha)));
+        · congr! 2
+          · expose_names
+            exact
+              Equiv.instEquivLike.hcongr_2 (α → β) (α → β) rfl (Fin (Fintype.card β ^ 1))
+                (Fin (Fintype.card β ^ Fintype.card α)) e_1
+          · grind;
+        · simp
+          grind only
+        · ext1
+          simp [Unique.eq_default, ← h]
 
 theorem thinBP_CorrectState_succ {n} (x : α → β) :
     thinBP_CorrectState F n x (evalLayer (thinBP F) n x) := by
@@ -244,6 +345,14 @@ theorem thinBP_CorrectState_succ {n} (x : α → β) :
   · subst n
     rw [Fin.succ_zero_eq_one']
     exact thinBP_CorrectState_one F x
+  let _ := @Classical.inhabited_of_nonempty α ‹_›
+  have ha : 0 < Fintype.card α := by positivity
+  have h_cond2 : 0 < Fintype.card β ^ Fintype.card α := by positivity
+  have h_depth : 1 < (thinBP F).depth + 1 := by
+    rw [thinBP_depth]
+    rw [← Nat.add_one_le_iff] at ha h_cond2
+    grw [← h_cond2, ← ha]
+    norm_num
   --Induction
   sorry
 

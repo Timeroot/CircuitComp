@@ -255,9 +255,9 @@ Prove that the negation of a group program computes the negation of the function
 theorem computes_negate [Group G] (i : α) (f : (α → Fin 2) → Fin 2) (σ : G)
     (h : GP.computes f σ⁻¹) :
     (GP.negate i σ).computes (fun x ↦ 1 - f x) σ := by
-  simp_all +decide [ computes ];
-  intro x; have := h x; simp_all +decide [ eval_append, negate ] ;
-  cases Fin.exists_fin_two.mp ⟨ f x, rfl ⟩ <;> simp_all +decide [ eval_const ]
+  simp_all [ computes ];
+  intro x; have := h x; simp_all [ eval_append, negate ] ;
+  cases Fin.exists_fin_two.mp ⟨ f x, rfl ⟩ <;> simp_all [ eval_const ]
 
 end GroupProgram
 
@@ -420,7 +420,7 @@ theorem GP_of_FeedForward_layer_computes_ID {n : ℕ} (hn : n > 0) {nodes_d node
       obtain ⟨e', he'⟩ := h_not
       have h_eq : e.symm 0 = e'.symm 0 := by
         have := e.symm.surjective ( e'.symm 0 ) ; have := e'.symm.surjective ( e.symm 0 ) ; aesop;
-      have := he fun _ => 0; have := he' fun _ => 0; simp_all +decide ;
+      have := he fun _ => 0; have := he' fun _ => 0; simp_all ;
     simp [h_not_and, h_not_not, h_id];
     convert h_prev _ _ hσ using 2;
     exact h_id.choose_spec _
@@ -441,16 +441,16 @@ theorem GP_of_FeedForward_layer_computes_Const {n : ℕ} (hn : n > 0) {nodes_d n
   intro h_not_const;
   -- Since the gate is not a constant 1, it must be either an AND or a NOT gate.
   by_cases h_and : (gates u).op.isAND ∨ (gates u).op.isNOT ∨ (gates u).op.isID;
-  · obtain h | h | h := h_and <;> simp_all +decide [ FeedForward.GateOp.isAND, FeedForward.GateOp.isNOT, FeedForward.GateOp.isID, FeedForward.GateOp.isConst ];
+  · obtain h | h | h := h_and <;> simp_all [ FeedForward.GateOp.isAND, FeedForward.GateOp.isNOT, FeedForward.GateOp.isID, FeedForward.GateOp.isConst ];
     · exact h_const.1.elim ( Classical.choose h |> Equiv.symm |> Equiv.toEmbedding |> fun e => e 0 );
     · exact h_const.1.elim ( h.choose.symm 0 );
     · obtain ⟨ e, he ⟩ := h;
       exact h_const.1.elim ( e.symm 0 );
-  · unfold GP_of_FeedForward_layer at h_not_const; simp_all +decide ;
-    unfold GroupProgram.computes at h_not_const; simp_all +decide ;
+  · unfold GP_of_FeedForward_layer at h_not_const; simp_all ;
+    unfold GroupProgram.computes at h_not_const; simp_all ;
     obtain ⟨ x, hx ⟩ := h_not_const
-    simp_all +decide [ GroupProgram.eval_const ] ;
-    unfold Gate.eval at hx; simp_all +decide [ GateOp.isConst ] ;
+    simp_all [ GroupProgram.eval_const ] ;
+    unfold Gate.eval at hx; simp_all [ GateOp.isConst ] ;
 
 /-
 If `σ` is the commutator of `x` and `y`, and `GP1` computes `f` with `y⁻¹` and `GP2` computes `g` with `x⁻¹`, then the commutator of `GP1` and `GP2` computes `f * g` with `σ`.
@@ -837,3 +837,462 @@ all NC_GateOps, since they use gates of an arity greater than 2 for combining tw
 Later we'll show how to "compile" this circuit to use only arity-2 gates, with some constant increase
 in size and depth.
 -/
+
+
+/-
+Define the gate operations for matrix multiplication, base transitions, and the final output step.
+MatrixMulOp combines two boolean matrices (represented by their rows/cols).
+BaseOp computes the transition for a single step based on the input bit.
+FinalOp computes the final output from the last layer's state.
+-/
+def MatrixMulOp (k : ℕ) : FeedForward.GateOp (Fin 2) where
+  ι := Fin k ⊕ Fin k
+  func x := if ∃ i, x (.inl i) = 1 ∧ x (.inr i) = 1 then 1 else 0
+
+def BaseOp (b0 b1 : Fin 2) : FeedForward.GateOp (Fin 2) where
+  ι := Fin 1
+  func x := if x 0 = 0 then b0 else b1
+
+def FinalOp (k : ℕ) (ret : Fin k → Fin 2) : FeedForward.GateOp (Fin 2) where
+  ι := Fin k
+  func x := if ∃ i, x i = 1 ∧ ret i = 1 then 1 else 0
+
+/-
+Define the height H of the circuit construction (log depth of BP) and the interval helper function.
+H is the ceiling of log2 of the BP depth.
+interval(t, j) returns the start and end layer indices for the j-th interval at level t of the recursive construction.
+Corrected the proof term for Fin bounds.
+-/
+def BP_to_Circuit_H {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) : ℕ :=
+  Nat.clog 2 BP.depth
+
+def BP_to_Circuit_interval {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) (t j : ℕ) : Fin (BP.depth + 1) × Fin (BP.depth + 1) :=
+  (⟨min BP.depth (j * 2^t), Nat.lt_succ_of_le (Nat.min_le_left _ _)⟩,
+   ⟨min BP.depth ((j + 1) * 2^t), Nat.lt_succ_of_le (Nat.min_le_left _ _)⟩)
+
+/-
+Define the nodes of the circuit.
+`LayerNodes` represents the nodes at a specific level `t` of the recursive construction (corresponding to layer `t+1` of the circuit). It consists of pairs of BP nodes for each interval at that level.
+`Depth` is the total depth of the circuit (H + 2).
+`Nodes` defines the type of nodes at each layer `k` of the circuit:
+- Layer 0: Inputs (Fin n).
+- Layer H+2: Output (Fin 1).
+- Intermediate layers k: `LayerNodes` at level `k-1`.
+-/
+def BP_to_Circuit_LayerNodes {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) (t : ℕ) : Type :=
+  Σ (j : Fin ⌈(BP.depth : ℚ) / 2^t⌉₊), BP.nodes (BP_to_Circuit_interval BP t j).1 × BP.nodes (BP_to_Circuit_interval BP t j).2
+
+def BP_to_Circuit_Depth {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) : ℕ :=
+  BP_to_Circuit_H BP + 2
+
+def BP_to_Circuit_Nodes {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) (k : Fin (BP_to_Circuit_Depth BP + 1)) : Type :=
+  if k = 0 then Fin n
+  else if k = Fin.last (BP_to_Circuit_Depth BP) then Fin 1
+  else BP_to_Circuit_LayerNodes BP (k - 1)
+
+/-
+Define a constant gate operation.
+-/
+def ConstOp (b : Fin 2) : FeedForward.GateOp (Fin 2) where
+  ι := Fin 0
+  func _ := b
+
+/-
+Define the gates for the first layer (layer 0 to 1) of the circuit.
+These gates correspond to the base intervals of length 1 (or 0) in the branching program.
+If the interval is valid (j < depth), the gate checks if the input variable matches the edge required to go from u_start to u_end.
+If the interval is invalid (j >= depth), the gate outputs 1 iff u_start == u_end (identity path of length 0).
+Using `sorry` for proofs to avoid type errors and `open Classical` for decidability.
+-/
+open Classical in
+def BP_to_Circuit_Gates_0 {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2))
+    (u : BP_to_Circuit_LayerNodes BP 0) : FeedForward.Gate (Fin 2) (Fin n) :=
+  let j := u.1
+  let u_start := u.2.1
+  let u_end := u.2.2
+  if h : j.val < BP.depth then
+    let k : Fin BP.depth := ⟨j.val, h⟩
+    let u_start_casted : BP.nodes k.castSucc := cast (by
+    -- By definition of `BP_to_Circuit_interval`, the first component is `min BP.depth (j * 2^0)`, which simplifies to `j` since `2^0 = 1`.
+    simp [BP_to_Circuit_interval];
+    -- Since $j$ is a Fin, its value is less than $BP.depth$, so $min BP.depth j.val$ is just $j.val$.
+    have h_min : min BP.depth j.val = j.val := by
+      exact min_eq_right h.le;
+    convert rfl;
+    exact h_min.symm) u_start
+    let var := BP.nodeVar u_start_casted
+    let edge0 : BP.nodes k.succ := BP.edges u_start_casted 0
+    let edge1 : BP.nodes k.succ := BP.edges u_start_casted 1
+    let u_end_casted : BP.nodes k.succ := cast (by
+    -- By definition of `BP_to_Circuit_interval`, the second component is `min(BP.depth, (j + 1) * 2^0)`.
+    simp [BP_to_Circuit_interval];
+    congr;
+    exact min_eq_right ( Nat.succ_le_of_lt h )) u_end
+    let b0 := if edge0 = u_end_casted then 1 else 0
+    let b1 := if edge1 = u_end_casted then 1 else 0
+    { op := BaseOp b0 b1
+      inputs := fun _ ↦ var }
+  else
+    let u_start_casted : BP.nodes (Fin.last BP.depth) := cast (by
+    -- Since $j \geq \text{depth}$, the first index of the interval is $j * 2^0 = j$, and since $j \geq \text{depth}$, this index is $\text{depth}$.
+    have h_index : (BP_to_Circuit_interval BP 0 j.val).1.val = BP.depth := by
+      exact min_eq_left ( by aesop );
+    convert rfl;
+    exact Fin.ext h_index.symm) u_start
+    let u_end_casted : BP.nodes (Fin.last BP.depth) := cast (by
+    congr! 1
+    generalize_proofs at *;
+    -- Since $j.val \geq BP.depth$, we have $1 + j.val \geq BP.depth + 1$, and thus $\min(BP.depth, 1 + j.val) = BP.depth$.
+    have h_min : min BP.depth (1 + j.val) = BP.depth := by
+      grind
+    generalize_proofs at *;
+    -- Since $j.val \geq BP.depth$, we have $1 + j.val \geq BP.depth + 1$, and thus $\min(BP.depth, 1 + j.val) = BP.depth$. Therefore, the second component of the interval is Fin.last BP.depth.
+    simp [BP_to_Circuit_interval];
+    exact Fin.ext ( by simpa [ add_comm ] using h_min )) u_end
+    let b := if u_start_casted = u_end_casted then 1 else 0
+    { op := ConstOp b
+      inputs := fun i ↦ i.elim0 }
+
+/-
+Define the midpoint index for the interval splitting.
+The midpoint of the interval at level `t+1` (which covers `j * 2^(t+1)` to `(j+1) * 2^(t+1)`) is `(2*j+1) * 2^t`.
+We take the minimum with `BP.depth` to ensure it's a valid layer index.
+-/
+def BP_to_Circuit_midpoint {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) (t j : ℕ) : Fin (BP.depth + 1) :=
+  ⟨min BP.depth ((2 * j + 1) * 2 ^ t), Nat.lt_succ_of_le (Nat.min_le_left _ _)⟩
+
+/-
+Helper lemma: If `j` is a valid interval index at level `t+1`, then `2*j` is a valid interval index at level `t`.
+This corresponds to the left child in the recursive construction of the circuit.
+The number of intervals at level `t` is `ceil(depth / 2^t)`.
+We need to show `2*j < ceil(depth / 2^t)` given `j < ceil(depth / 2^(t+1))`.
+-/
+lemma BP_to_Circuit_left_child_valid {n : ℕ} {BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)}
+    {t : ℕ} {j : ℕ} (h : j < ⌈(BP.depth : ℚ) / 2^(t+1)⌉₊) :
+    2 * j < ⌈(BP.depth : ℚ) / 2^t⌉₊ := by
+  rw [ Nat.lt_ceil, lt_div_iff₀ ] at * <;> norm_cast at *;
+  · convert h using 1 ; ring;
+  · positivity;
+  · positivity
+
+/-
+Define helper lemmas to simplify the casts in `BP_to_Circuit_Gates_mid`.
+These lemmas establish the relationships between the interval endpoints and the midpoint for the recursive step.
+1. The start of interval `j` at level `t+1` is the same as the start of interval `2*j` at level `t`.
+2. The midpoint of interval `j` at level `t+1` is the end of interval `2*j` at level `t`.
+3. The midpoint of interval `j` at level `t+1` is the start of interval `2*j+1` at level `t`.
+4. The end of interval `j` at level `t+1` is the same as the end of interval `2*j+1` at level `t`.
+-/
+lemma BP_to_Circuit_interval_start_eq_left_start {n : ℕ} {BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)}
+    {t j : ℕ} :
+    (BP_to_Circuit_interval BP (t + 1) j).1 = (BP_to_Circuit_interval BP t (2 * j)).1 := by
+  unfold BP_to_Circuit_interval; ring_nf
+
+lemma BP_to_Circuit_interval_mid_eq_left_end {n : ℕ} {BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)}
+    {t j : ℕ} :
+    BP_to_Circuit_midpoint BP t j = (BP_to_Circuit_interval BP t (2 * j)).2 := by
+  rfl
+
+lemma BP_to_Circuit_interval_mid_eq_right_start {n : ℕ} {BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)}
+    {t j : ℕ} :
+    BP_to_Circuit_midpoint BP t j = (BP_to_Circuit_interval BP t (2 * j + 1)).1 := by
+  rfl
+
+lemma BP_to_Circuit_interval_end_eq_right_end {n : ℕ} {BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)}
+    {t j : ℕ} :
+    (BP_to_Circuit_interval BP (t + 1) j).2 = (BP_to_Circuit_interval BP t (2 * j + 1)).2 := by
+  unfold BP_to_Circuit_interval; ring_nf
+
+/-
+Define the matrix multiplication gate construction for the intermediate layers.
+This helper function constructs the gate when the right child interval is valid.
+It uses `MatrixMulOp` to combine the results from the left and right sub-intervals.
+The inputs to the gate are the values corresponding to the paths through the midpoint.
+Using helper lemmas for interval bounds and equality.
+-/
+open Classical in
+def BP_to_Circuit_Gates_mid_Matrix {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) [BP.Finite]
+    (t : Fin (BP_to_Circuit_H BP))
+    (u : BP_to_Circuit_LayerNodes BP (t.val + 1))
+    (h_right : 2 * u.1.val + 1 < ⌈(BP.depth : ℚ) / 2^t.val⌉₊) :
+    FeedForward.Gate (Fin 2) (BP_to_Circuit_LayerNodes BP t.val) :=
+  let j := u.1
+  let u_start := u.2.1
+  let u_end := u.2.2
+  let mid_idx := BP_to_Circuit_midpoint BP t.val j.val
+  let mid_nodes := BP.nodes mid_idx
+  let k := Nat.card mid_nodes
+  let equiv : Fin k ≃ mid_nodes := (Finite.equivFin mid_nodes).symm
+  { op := MatrixMulOp k
+    inputs := fun i ↦
+      match i with
+      | .inl i =>
+        let v := equiv i
+        let node : BP_to_Circuit_LayerNodes BP t.val :=
+          ⟨⟨2 * j.val, BP_to_Circuit_left_child_valid j.2⟩, ⟨cast (by
+          -- By definition of `BP_to_Circuit_interval`, the start of the interval at level `t+1` is the same as the start of the interval at level `t` for `2*j`.
+          apply congr_arg (fun x => BP.nodes x) (BP_to_Circuit_interval_start_eq_left_start)) u_start, cast (by
+          exact rfl) v⟩⟩
+        node
+      | .inr i =>
+        let v := equiv i
+        let node : BP_to_Circuit_LayerNodes BP t.val :=
+          ⟨⟨2 * j.val + 1, h_right⟩, ⟨cast (by
+          -- By definition of `BP_to_Circuit_midpoint`, we know that `mid_idx` is equal to `BP_to_Circuit_interval BP t (2 * j + 1).1`.
+          have h_mid_eq : mid_idx = (BP_to_Circuit_interval BP t (2 * j + 1)).1 := by
+            -- By definition of `BP_to_Circuit_midpoint`, we know that `mid_idx` is equal to the start of the interval at level `t` for `2 * j + 1`.
+            apply BP_to_Circuit_interval_mid_eq_right_start;
+          exact h_mid_eq ▸ rfl) v, cast (by
+          -- By definition of `BP_to_Circuit_interval`, we know that the second element of the pair for `t + 1` is equal to the second element of the pair for `t` with `2 * j + 1`.
+          apply congr_arg BP.nodes
+          apply BP_to_Circuit_interval_end_eq_right_end) u_end⟩⟩
+        node
+  }
+
+/-
+Lemma: If the right child interval is invalid (index out of bounds), then the end of the parent interval is equal to the end of the left child interval.
+This is because both intervals extend to the end of the branching program (depth D).
+Proof uses the fact that the index bound implies the start of the right child (which is the end of the left child) is beyond the depth D.
+-/
+lemma BP_to_Circuit_interval_end_eq_left_end_of_right_invalid {n : ℕ} {BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)}
+    {t j : ℕ} (h : ¬ (2 * j + 1 < ⌈(BP.depth : ℚ) / 2^t⌉₊)) :
+    (BP_to_Circuit_interval BP (t + 1) j).2 = (BP_to_Circuit_interval BP t (2 * j)).2 := by
+      have := @BP_to_Circuit_interval_end_eq_right_end;
+      convert this using 1;
+      simp [ BP_to_Circuit_interval ];
+      rw [ min_eq_left, min_eq_left ] <;> norm_num [ Nat.mul_succ, pow_succ' ] at *;
+      · rw [ div_le_iff₀ ] at h <;> norm_cast at * <;> linarith [ Nat.one_le_pow t 2 zero_lt_two ];
+      · rw [ div_le_iff₀ ] at h <;> norm_cast at * ; linarith [ Nat.one_le_pow t 2 zero_lt_two ]
+
+/-
+Define the identity gate construction for the intermediate layers.
+This helper function constructs the gate when the right child interval is invalid.
+In this case, the interval is identical to the left child interval, so we just propagate the result using an identity gate.
+Using `BP_to_Circuit_left_child_valid` for the left child index.
+Using `BP_to_Circuit_interval_start_eq_left_start` and `BP_to_Circuit_interval_end_eq_left_end_of_right_invalid` for casts.
+-/
+open Classical in
+def BP_to_Circuit_Gates_mid_Identity {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2))
+    (t : Fin (BP_to_Circuit_H BP))
+    (u : BP_to_Circuit_LayerNodes BP (t.val + 1))
+    (h_right_invalid : ¬ (2 * u.1.val + 1 < ⌈(BP.depth : ℚ) / 2^t.val⌉₊)) :
+    FeedForward.Gate (Fin 2) (BP_to_Circuit_LayerNodes BP t.val) :=
+  let j := u.1
+  let u_start := u.2.1
+  let u_end := u.2.2
+  let left_idx : Fin ⌈(BP.depth : ℚ) / 2^t.val⌉₊ := ⟨2 * j.val, BP_to_Circuit_left_child_valid j.2⟩
+  let node : BP_to_Circuit_LayerNodes BP t.val :=
+    ⟨left_idx, ⟨cast (by
+      apply congr_arg BP.nodes
+      apply BP_to_Circuit_interval_start_eq_left_start) u_start,
+      cast (by
+      apply congr_arg BP.nodes
+      apply BP_to_Circuit_interval_end_eq_left_end_of_right_invalid h_right_invalid) u_end⟩⟩
+  { op := FeedForward.GateOp.id (Fin 2)
+    inputs := fun _ ↦ node }
+
+/-
+Define the gate construction for the intermediate layers by dispatching to the helper functions.
+If the right child interval is valid, use the matrix multiplication gate.
+Otherwise, use the identity gate.
+-/
+open Classical in
+def BP_to_Circuit_Gates_mid {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) [BP.Finite]
+    (t : Fin (BP_to_Circuit_H BP))
+    (u : BP_to_Circuit_LayerNodes BP (t.val + 1)) :
+    FeedForward.Gate (Fin 2) (BP_to_Circuit_LayerNodes BP t.val) :=
+  if h : 2 * u.1.val + 1 < ⌈(BP.depth : ℚ) / 2^t.val⌉₊ then
+    BP_to_Circuit_Gates_mid_Matrix BP t u h
+  else
+    BP_to_Circuit_Gates_mid_Identity BP t u h
+
+/-
+Prove that `BP_to_Circuit_LayerNodes` is finite.
+This is needed for `Fintype.ofFinite` in the gate definitions.
+It follows from the finiteness of `Fin`, `BP.nodes`, and the closure of finite types under Sigma and Prod.
+-/
+instance BP_to_Circuit_LayerNodes_Finite {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) [BP.Finite] (t : ℕ) :
+    Finite (BP_to_Circuit_LayerNodes BP t) := by
+  dsimp [BP_to_Circuit_LayerNodes]
+  infer_instance
+
+/-
+Define the final gate of the circuit.
+This gate takes all nodes from the top level of the tree (level H) as input.
+It outputs 1 if there exists a node `(u, v)` such that `u` is the start node, `v` is an accepting node (retVal = 1), and the circuit computed 1 for `(u, v)` (meaning there is a path).
+Using `FinalOp` with a `ret` function that checks these conditions.
+Using `sorry` for casts (since `BP.start` is in `nodes 0` and `u_start` is in `nodes (interval ...).1`, etc).
+Now that `BP_to_Circuit_LayerNodes_Finite` is defined, `Fintype.ofFinite` should work.
+-/
+open Classical in
+def BP_to_Circuit_Gates_last {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) [BP.Finite]
+    : FeedForward.Gate (Fin 2) (BP_to_Circuit_LayerNodes BP (BP_to_Circuit_H BP)) :=
+  let nodes := BP_to_Circuit_LayerNodes BP (BP_to_Circuit_H BP)
+  letI := Fintype.ofFinite nodes
+  let k := Nat.card nodes
+  let equiv : Fin k ≃ nodes := (Finite.equivFin nodes).symm
+  let ret : Fin k → Fin 2 := fun i ↦
+    let node := equiv i
+    let u_start := node.2.1
+    let u_end := node.2.2
+    if u_start = cast (by
+    -- Since the interval at level H is just the entire depth, the start of the interval is 0.
+    have h_interval_start : (BP_to_Circuit_interval BP (BP_to_Circuit_H BP) node.fst).1 = 0 := by
+      norm_num [ BP_to_Circuit_interval ];
+      exact Or.inr ( Nat.eq_zero_of_le_zero ( Nat.le_of_lt_succ ( by linarith [ Fin.is_lt node.fst, show node.fst.val < 1 from Nat.lt_succ_of_le ( Nat.le_of_lt_succ ( by linarith [ Fin.is_lt node.fst, show ⌈ ( BP.depth : ℚ ) / 2 ^ BP_to_Circuit_H BP⌉₊ ≤ 1 from by
+                                                                                                                                                                                                          simp +zetaDelta at *;
+                                                                                                                                                                                                          rw [ div_le_iff₀ ] <;> norm_cast <;> norm_num [ Nat.le_log_iff_pow_le, BP_to_Circuit_H ];
+                                                                                                                                                                                                          exact_mod_cast Nat.le_pow_clog ( by decide ) _ ] ) ) ] ) ) );
+    rw [h_interval_start]) BP.start ∧ BP.retVals (cast (by
+    refine' congr_arg BP.nodes ( Fin.ext _ );
+    simp [ BP_to_Circuit_H, BP_to_Circuit_interval ];
+    -- By definition of `Nat.clog`, we know that `2 ^ Nat.clog 2 BP.depth ≥ BP.depth`.
+    have h_exp : 2 ^ Nat.clog 2 BP.depth ≥ BP.depth := by
+      exact_mod_cast Nat.le_pow_clog ( by decide ) _;
+    exact le_trans h_exp ( Nat.le_trans ( by norm_num ) ( Nat.mul_le_mul ( Nat.succ_le_succ ( Nat.zero_le _ ) ) le_rfl ) )) u_end) = 1 then 1 else 0
+  { op := FinalOp k ret
+    inputs := fun i ↦ equiv i }
+
+/-
+Define the full circuit construction from the branching program.
+The circuit has depth `H + 2`.
+Layer 0 gates are `BP_to_Circuit_Gates_0`.
+Layer `H + 1` gates are `BP_to_Circuit_Gates_last`.
+Intermediate layers `d` (corresponding to tree level `t = d - 1`) use `BP_to_Circuit_Gates_mid`.
+-/
+open Classical in
+def BP_to_Circuit {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) [BP.Finite] :
+    FeedForward (Fin 2) (Fin n) (Fin 1) :=
+  { depth := BP_to_Circuit_Depth BP
+    nodes := BP_to_Circuit_Nodes BP
+    gates := fun d u ↦
+      if h0 : d.val = 0 then
+        let u' : BP_to_Circuit_LayerNodes BP 0 := cast (by
+        cases d ; aesop) u
+        let g := BP_to_Circuit_Gates_0 BP u'
+        { op := g.op, inputs := fun i ↦ cast (by
+            -- Since `d` is 0, `d.castSucc` is also 0. Therefore, `BP_to_Circuit_Nodes BP d.castSucc` is the same as `BP_to_Circuit_Nodes BP 0`, which is `Fin n`.
+            simp [BP_to_Circuit_Nodes, h0];
+            -- Since $d.castSucc = 0$, the implication holds trivially because the antecedent is false.
+            intro h_castSucc_ne_zero
+            exfalso
+            apply h_castSucc_ne_zero
+            simp [Fin.ext_iff, h0]) (g.inputs i) }
+      else if h_last : d.val = BP_to_Circuit_H BP + 1 then
+        let u' : Fin 1 := cast (by
+        -- Since `d` is at the last layer, `d.val = BP_to_Circuit_H BP + 1`, so `BP_to_Circuit_Nodes BP d.succ` is `Fin 1` by definition.
+        have h_last_node : d.succ = Fin.last (BP_to_Circuit_Depth BP) := by
+          ext ; simp [ h_last, Fin.last ];
+          exact rfl;
+        -- Substitute `h_last_node` into the definition of `BP_to_Circuit_Nodes`.
+        rw [h_last_node];
+        -- By definition of BP_to_Circuit_Nodes, when the input is the last element, it returns Fin 1.
+        simp [BP_to_Circuit_Nodes];
+        exact fun h => absurd h ( Nat.ne_of_gt ( Nat.succ_pos _ ) )) u
+        let g := BP_to_Circuit_Gates_last BP
+        { op := g.op, inputs := fun i ↦ cast (by
+            -- By definition of `BP_to_Circuit_Nodes`, when `d = BP_to_Circuit_H BP + 1`, the nodes are `BP_to_Circuit_LayerNodes BP (BP_to_Circuit_H BP)`.
+            simp [BP_to_Circuit_Nodes, h_last];
+            simp [ Fin.ext_iff ];
+            -- Since $d \neq 0$, the implication holds trivially.
+            intro h
+            exfalso
+            exact h0 h) (g.inputs i) }
+      else
+        let t : Fin (BP_to_Circuit_H BP) := ⟨d.val - 1, by
+          -- Since $d$ is a Fin (BP_to_Circuit_Depth BP), its value is between 0 and BP_to_Circuit_Depth BP - 1. Therefore, $d.val - 1$ is between 0 and BP_to_Circuit_H BP + 1 - 2, which simplifies to BP_to_Circuit_H BP - 1.
+          have h_bounds : d.val < BP_to_Circuit_H BP + 2 := by
+            exact lt_of_lt_of_le d.2 ( Nat.le_refl _ );
+          omega⟩
+        let u' : BP_to_Circuit_LayerNodes BP (t.val + 1) := cast (by
+        -- By definition of `BP_to_Circuit_Nodes`, we know that `BP_to_Circuit_Nodes BP d.succ` is equal to `BP_to_Circuit_LayerNodes BP (d.val - 1)` because `d.val` is the index of the layer.
+        simp [BP_to_Circuit_Nodes];
+        -- Since `d.succ` cannot be the last element, the if statement simplifies to `BP_to_Circuit_LayerNodes BP d.val`.
+        have h_if_false : d.succ ≠ Fin.last (BP_to_Circuit_Depth BP) := by
+          simp [ Fin.ext_iff];
+          exact Nat.add_one_ne_add_one_iff.mpr h_last
+        simp [h_if_false];
+        exact congr_arg _ ( by rw [ Nat.sub_add_cancel ( Nat.one_le_iff_ne_zero.mpr h0 ) ] )) u
+        let g := BP_to_Circuit_Gates_mid BP t u'
+        { op := g.op, inputs := fun i ↦ cast (by
+            -- By definition of `BP_to_Circuit_Nodes`, we know that `BP_to_Circuit_Nodes BP d.castSucc` is equal to `BP_to_Circuit_LayerNodes BP t.val` because `d.castSucc` is the previous layer.
+            simp [BP_to_Circuit_Nodes];
+            -- Since `d` is not zero, the if statement simplifies to the else part.
+            simp [Fin.ext_iff, h0];
+            -- Since `t` is defined as `⟨d.val - 1, by sorry⟩`, we have `t.val = d.val - 1`.
+            simp [t]) (g.inputs i) }
+    nodes_zero := by
+      -- By definition of `BP_to_Circuit_Nodes`, for `k = 0`, it returns `Fin n`.
+      simp [BP_to_Circuit_Nodes]
+    nodes_last := by
+      -- By definition of `BP_to_Circuit_Nodes`, when `k = Fin.last (BP_to_Circuit_Depth BP)`, it returns `Fin 1`.
+      simp [BP_to_Circuit_Nodes, BP_to_Circuit_Depth]
+  }
+
+/-
+Prove that the depth of the constructed circuit is `ceil(log2(BP.depth)) + 2`.
+This follows directly from the definition of `BP_to_Circuit` and `BP_to_Circuit_Depth`.
+-/
+theorem BP_to_Circuit_depth_eq {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) [BP.Finite] :
+    (BP_to_Circuit BP).depth = Nat.clog 2 BP.depth + 2 := by
+  simp [BP_to_Circuit, BP_to_Circuit_Depth, BP_to_Circuit_H]
+
+/-
+Define `BP_evalSegment` which evaluates the branching program from layer `i` to layer `j` starting at node `u`.
+If `i = j`, it returns `u`.
+Otherwise, it steps one layer forward and recurses.
+Using `termination_by j.val - i.val` to avoid `Fin` subtraction issues.
+Explicitly constructing proofs for bounds and casts.
+-/
+def BP_evalSegment {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2))
+    (x : Fin n → Fin 2) (i j : Fin (BP.depth + 1)) (h : i ≤ j) (u : BP.nodes i) : BP.nodes j :=
+  if h_eq : i = j then
+    cast (by rw [h_eq]) u
+  else
+    let i_val_lt_j_val : i.val < j.val := lt_of_le_of_ne h (Fin.val_injective.ne h_eq)
+    let i_lt_depth : i.val < BP.depth := lt_of_lt_of_le i_val_lt_j_val (Nat.le_of_lt_succ j.isLt)
+    let i' : Fin BP.depth := ⟨i.val, i_lt_depth⟩
+    let u_casted : BP.nodes i'.castSucc := cast (by
+      apply congr_arg BP.nodes
+      apply Fin.ext
+      simp [i']) u
+    let next_u := BP.edges u_casted (x (BP.nodeVar u_casted))
+    BP_evalSegment BP x i'.succ j (by
+      apply Nat.succ_le_of_lt
+      exact i_val_lt_j_val) next_u
+termination_by j.val - i.val
+decreasing_by
+  simp_wf
+  exact Nat.sub_succ_lt_self j.val i.val i_val_lt_j_val
+
+/-
+Lemma: `BP_evalSegment` for a single step (from `i` to `i+1`) is equivalent to `BP.edges`.
+This simplifies the reasoning for the base case of the circuit correctness.
+-/
+lemma BP_evalSegment_step {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2))
+    (x : Fin n → Fin 2) (i : Fin BP.depth) (u : BP.nodes i.castSucc) :
+    BP_evalSegment BP x i.castSucc i.succ (Nat.le_succ _) u =
+    BP.edges u (x (BP.nodeVar u)) := by
+      -- By definition of `BP_evalSegment`, when `i = j`, it returns `u`.
+      simp [BP_evalSegment];
+      exact fun h => absurd h ( ne_of_lt ( Fin.castSucc_lt_succ i ) )
+
+/-
+Lemma: The start of an interval is less than or equal to the end of the interval.
+This is needed to satisfy the precondition of `BP_evalSegment`.
+-/
+lemma BP_to_Circuit_interval_le {n : ℕ} (BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)) (t j : ℕ) :
+    (BP_to_Circuit_interval BP t j).1 ≤ (BP_to_Circuit_interval BP t j).2 := by
+      exact min_le_min ( Nat.le_refl _ ) ( Nat.mul_le_mul_right _ ( by linarith ) )
+
+/-
+Lemma: When `j < depth`, the interval at level 0 is `(j, j+1)`.
+This simplifies the interval expressions in the correctness proof.
+Corrected the proof term for the upper bound of the interval end.
+-/
+lemma BP_to_Circuit_interval_0_lt {n : ℕ} {BP : LayeredBranchingProgram (Fin n) (Fin 2) (Fin 2)}
+    {j : Fin ⌈(BP.depth : ℚ) / 2^0⌉₊} (h : j.val < BP.depth) :
+    BP_to_Circuit_interval BP 0 j.val = (⟨j.val, lt_trans h (Nat.lt_succ_self _)⟩, ⟨j.val + 1, Nat.lt_succ_of_le (Nat.succ_le_of_lt h)⟩) := by
+      generalize_proofs at *;
+      (generalize_proofs at *; simp_all [ BP_to_Circuit_interval ];);
+      exact ⟨ Nat.le_of_lt h, Nat.le_of_lt_succ ‹_› ⟩

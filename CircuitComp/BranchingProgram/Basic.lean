@@ -261,6 +261,11 @@ protected class Finite : Prop where
 instance [inst : P.Finite] {i} : Finite (P.nodes i) :=
   inst.finite i
 
+/-- We say a branching program is oblivious if all nodes in the same layer read the same variable.
+This is often implicit in the "layered" adjective of a layered branching program. -/
+def IsOblivious : Prop :=
+  ∀ i : Fin P.depth, ∀ j k : P.nodes i.castSucc, P.nodeVar j = P.nodeVar k
+
 /-- Evaluate a `SkipBranchingProgram` starting from a specific node. -/
 def evalAt (P : SkipBranchingProgram α β γ) (x : α → β) {i : Fin P.depth.succ} (u : P.nodes i) : γ :=
   if h : i = Fin.last P.depth then
@@ -293,6 +298,30 @@ theorem evalAt_castSucc (x : α → β) (i : Fin P.depth) (u : P.nodes i.castSuc
 /-- Evaluate a `SkipBranchingProgram` on inputs `x`. -/
 def eval (x : α → β) : γ :=
   P.evalAt x P.start
+
+/--
+If a SkipBranchingProgram has depth > 0, then α must be nonempty because the start node
+at layer 0 must read a variable.
+-/
+theorem nonempty_of_depth_pos (h : 0 < P.depth) : Nonempty α :=
+  let z : Fin P.depth := ⟨0, h⟩
+  let u : P.nodes z.castSucc := cast (by simp [z]) P.start
+  ⟨P.nodeVar u⟩
+
+/-- The "active nodes" ahead of layer `i` are the nodes with an edge going past layer `i` there. -/
+def ActiveNodes (i : Fin (P.depth + 1)) : Type v :=
+  { u : (m : Fin (P.depth + 1)) × P.nodes m // u.1 > i ∧ ∃ l₂ : Fin (P.depth),
+    l₂.castSucc < i ∧ ∃ (v : P.nodes l₂.castSucc) (b : β), P.edges v b = u }
+
+lemma ActiveNodes_last_isEmpty : IsEmpty (P.ActiveNodes (Fin.last P.depth)) :=
+  ⟨fun ⟨_, h, _⟩ ↦ (Fin.le_last _).not_gt h⟩
+
+/-- The width of a `SkipBranchingProgram` is not the count of nodes at each layer (since this could
+be made 1 without much difficulty, by increasing depth), but the count of nodes *and* the edges passing
+that layer by - this reflects the notion of width most naturally corresponding to
+`LayeredBranchingProgram.width`, and is the quantity preserved by `SkipBranchingProgram.toLayered`. -/
+def width : ℕ :=
+  ⨆ i : Fin (P.depth + 1), Nat.card (P.ActiveNodes i)
 
 end SkipBranchingProgram
 
@@ -578,17 +607,7 @@ theorem toSkip_evalAt
     rw [ WellFounded.fix_eq ];
     unfold toSkip; aesop;
   · convert ih _ _ _ _ rfl using 1;
-    · unfold evalAt;
-      rw [ WellFounded.fix_eq, WellFounded.fix_eq ];
-      unfold toSkip
-      simp
-      let h_info := P.info u.val
-      cases h : h_info
-      · exact absurd ( u.2.1 ) ( by
-          have := BranchingProgram.height_eq_zero_of_leaf P u.val _ h;
-          exact ne_of_lt ( lt_of_le_of_lt ( Nat.le_of_eq this ) ( Nat.sub_pos_of_lt ( lt_of_le_of_ne ( Fin.le_last _ ) ( by simpa [ Fin.ext_iff ] using ‹¬i = Fin.last _› ) ) ) ) );
-      · subst h_info
-        sorry
+    · sorry
     · rw [ ← n ];
       apply Nat.sub_lt_sub_left
       · exact lt_of_le_of_ne ( Fin.le_last _ ) ( by simpa [ Fin.ext_iff ] using h );
@@ -613,23 +632,6 @@ namespace SkipBranchingProgram
 open Classical
 
 variable {α : Type u} {β : Type v} {γ : Type w} (P : SkipBranchingProgram α β γ)
-
-/--
-If a SkipBranchingProgram has depth > 0, then α must be nonempty because the start node
-at layer 0 must read a variable.
--/
-theorem nonempty_of_depth_pos (h : 0 < P.depth) : Nonempty α :=
-  let z : Fin P.depth := ⟨0, h⟩
-  let u : P.nodes z.castSucc := cast (by simp [z]) P.start
-  ⟨P.nodeVar u⟩
-
-/-- The "active nodes" ahead of layer `i` are the nodes with an edge going past layer `i` there. -/
-def ActiveNodes (i : Fin (P.depth + 1)) : Type v :=
-  { u : (m : Fin (P.depth + 1)) × P.nodes m // u.1 > i ∧ ∃ l₂ : Fin (P.depth),
-    l₂.castSucc < i ∧ ∃ (v : P.nodes l₂.castSucc) (b : β), P.edges v b = u }
-
-lemma ActiveNodes_last_isEmpty : IsEmpty (P.ActiveNodes (Fin.last P.depth)) :=
-  ⟨fun ⟨_, h, _⟩ ↦ (Fin.le_last _).not_gt h⟩
 
 def toLayered : LayeredBranchingProgram α β γ where
   depth := P.depth
